@@ -1,10 +1,48 @@
 import { SlashCommandBuilder } from "discord.js";
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getBalance, setBalance, getInventory, updateInventory } from "../firebase.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dataPath = path.join(__dirname, '../data/userBalances.json');
 const shopDataPath = path.join(__dirname, '../data/shopItems.json');
+const inventoryPath = path.join(__dirname, '../data/userInventories.json');
+
+async function getBalance(userId) {
+  const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
+  return data[userId] || 100;
+}
+
+async function setBalance(userId, amount) {
+  const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
+  data[userId] = amount;
+  await fs.writeFile(dataPath, JSON.stringify(data, null, 2));
+}
+
+async function addToInventory(userId, item) {
+  let inventories = {};
+  try {
+    inventories = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
+  } catch {
+    inventories = {};
+  }
+  
+  if (!inventories[userId]) {
+    inventories[userId] = { packs: [], cards: [] };
+  }
+  
+  // Get full pack details from shop
+  const shopData = JSON.parse(await fs.readFile(shopDataPath, 'utf8'));
+  const fullPack = shopData.packs.find(p => p.id === item.id);
+  
+  inventories[userId].packs.push({
+    ...item,
+    ...fullPack, // Include all pack details
+    purchaseDate: new Date().toISOString()
+  });
+  
+  await fs.writeFile(inventoryPath, JSON.stringify(inventories, null, 2));
+}
 
 export default {
   data: new SlashCommandBuilder()
@@ -48,13 +86,12 @@ export default {
       // Deduct stars and complete purchase
       await setBalance(interaction.user.id, userBalance - pack.price);
       
-      // Get current inventory and add the pack
-      const inventory = await getInventory(interaction.user.id);
-      inventory.packs.push({
-        ...pack,
-        purchaseDate: new Date().toISOString()
+      // Add to inventory
+      await addToInventory(interaction.user.id, {
+        id: pack.id,
+        type: "pack",
+        name: pack.name
       });
-      await updateInventory(interaction.user.id, inventory);
       
       await interaction.reply({
         content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${userBalance - pack.price} stars.`,
