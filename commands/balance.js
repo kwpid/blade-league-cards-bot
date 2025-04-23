@@ -1,3 +1,4 @@
+// balance.js
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import { getBalance } from "../firebase.js";
 
@@ -22,17 +23,42 @@ export default {
         .setRequired(false)),
 
   async execute(interaction) {
-    const targetUser = interaction.options.getUser("user") || interaction.user;
-    const balance = await getBalance(targetUser.id);
-    const formatted = formatStars(balance);
+    try {
+      // Defer reply to give more time for Firebase operation
+      await interaction.deferReply();
+      
+      const targetUser = interaction.options.getUser("user") || interaction.user;
+      const balance = await getBalance(targetUser.id);
+      
+      if (balance === undefined || balance === null) {
+        throw new Error("Failed to retrieve balance");
+      }
 
-    const embed = new EmbedBuilder()
-      .setColor(0xffd700)
-      .setTitle("⭐ Star Balance")
-      .setDescription(`${targetUser.id === interaction.user.id ? "You have" : `${targetUser.username} has`} **⭐ ${formatted} stars!**`)
-      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-      .setTimestamp();
+      const formatted = formatStars(balance);
 
-    await interaction.reply({ embeds: [embed] });
+      const embed = new EmbedBuilder()
+        .setColor(0xffd700)
+        .setTitle("⭐ Star Balance")
+        .setDescription(`${targetUser.id === interaction.user.id ? "You have" : `${targetUser.username} has`} **⭐ ${formatted} stars!**`)
+        .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+        .setFooter({ text: "Blade League Cards" })
+        .setTimestamp();
+
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      console.error("Error in balance command:", error);
+      
+      // Try to edit the deferred reply if it exists
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({
+          content: "❌ There was an error checking your balance. Please try again later.",
+        });
+      } else {
+        await interaction.reply({
+          content: "❌ There was an error checking your balance. Please try again later.",
+          ephemeral: true
+        });
+      }
+    }
   },
 };
