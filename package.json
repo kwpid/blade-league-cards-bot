@@ -1,22 +1,19 @@
 {
-   "name": "nodejs",
-   "version": "1.0.0",
-   "description": "",
-   "type": "module",
-   "main": "index.js",
-   "scripts": {
-     "start": "node index.js", 
-     "start": "node index.js",
-     "test": "echo \"Error: no test specified\" && exit 1"
-   },
-   "keywords": [],
-   "author": "",
-   "license": "ISC",
-   "dependencies": {
-     "@types/node": "^22.13.11",
-     "discord.js": "^14.18.0",
-     "dotenv": "^16.5.0"
-     "dotenv": "^16.5.0",
-     "pg": "^8.11.3"
-   }
- }
+  "name": "nodejs",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js", 
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node": "^22.13.11",
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.5.0"
+  }
+}
