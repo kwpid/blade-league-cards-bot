@@ -1,10 +1,8 @@
-// index.js
 import fs from "fs";
 import path from "path";
 import { Client, Collection, GatewayIntentBits } from "discord.js";
 import { config } from "dotenv";
 import { REST, Routes } from "discord.js";
-import { db, getBalance } from "./firebase.js"; // Import Firebase functions
 
 config();
 
@@ -49,65 +47,91 @@ try {
 }
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+  if (interaction.isChatInputCommand()) {
+    const command = client.commands.get(interaction.commandName);
 
-  const command = client.commands.get(interaction.commandName);
-  if (!command) return;
+    if (!command) return;
 
-  try {
-    await command.execute(interaction);
-  } catch (error) {
-    console.error(`Error executing command ${interaction.commandName}:`, error);
-    await interaction.reply({
-      content: "There was an error while executing this command!",
-      ephemeral: true,
-    });
-  }
-});
-
-client.once('ready', async () => {
-  console.log(`Ready! Logged in as ${client.user.tag}`);
-  
-  // Test Firebase connection
-  try {
-    const testRef = doc(db, "system", "connection_test");
-    await setDoc(testRef, { 
-      timestamp: new Date().toISOString(),
-      status: "active",
-      botName: client.user.tag
-    });
-    console.log("✅ Firebase connection test successful");
-  } catch (error) {
-    console.error("❌ Firebase connection test failed:", error);
-  }
-
-  // Initialize cards data if needed
-  const cardsFile = path.join(__dirname, 'data', 'cards.json');
-  if (!fs.existsSync(cardsFile)) {
-    fs.mkdirSync(path.dirname(cardsFile), { recursive: true });
-    fs.writeFileSync(cardsFile, JSON.stringify([
-      {
-        "id": 1,
-        "name": "Kupidcat",
-        "stats": {
-          "OFF": 76,
-          "DEF": 87,
-          "ABL": 60,
-          "MCH": 82
-        },
-        "rarity": "rare",
-        "availableTypes": "all"
+    try {
+      await command.execute(interaction);
+    } catch (error) {
+      console.error(error);
+      await interaction.reply({
+        content: "There was an error while executing this command!",
+        ephemeral: true,
+      });
+    }
+  } else if (interaction.isButton()) {
+    if (interaction.customId.startsWith('inventory_')) {
+      const parts = interaction.customId.split('_');
+      const inventoryCommand = client.commands.get('inventory');
+      
+      if (inventoryCommand) {
+        // Handle both old and new button formats
+        let type, page;
+        
+        if (parts.length === 3) {
+          // Old format: inventory_[action]_[page]
+          type = "packs"; // Default to packs for backward compatibility
+          page = parts[2];
+        } else {
+          // New format: inventory_[type]_[action]_[page]
+          type = parts[1];
+          page = parts[3];
+        }
+        
+        // Create a fake interaction object with the options
+        const fakeInteraction = {
+          ...interaction,
+          options: {
+            getString: () => type,
+            getInteger: () => parseInt(page)
+          },
+          user: interaction.user
+        };
+        
+        await inventoryCommand.execute(fakeInteraction);
+        await interaction.deferUpdate();
       }
-    ], null, 2));
+    }
   }
 });
 
-// Error handling
-process.on('unhandledRejection', error => {
-  console.error('Unhandled promise rejection:', error);
+// When the client is ready, run this code (only once)
+client.once('ready', () => {
+    console.log(`Ready! Logged in as ${client.user.tag}`);
+    console.log('Available commands:', Array.from(client.commands.keys()));
+    
+    // Ensure data directories exist
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir);
+    }
+    
+    // Initialize inventory file if it doesn't exist
+    const inventoryFile = path.join(dataDir, 'userInventories.json');
+    if (!fs.existsSync(inventoryFile)) {
+      fs.writeFileSync(inventoryFile, '{}');
+    }
+    
+    // Initialize cards file if it doesn't exist
+    const cardsFile = path.join(dataDir, 'cards.json');
+    if (!fs.existsSync(cardsFile)) {
+      fs.writeFileSync(cardsFile, JSON.stringify([
+        {
+          "id": 1,
+          "name": "Kupidcat",
+          "stats": {
+            "OFF": 76,
+            "DEF": 87,
+            "ABL": 60,
+            "MCH": 82
+          },
+          "rarity": "rare",
+          "availableTypes": "all"
+        }
+      ], null, 2));
+    }
 });
 
-client.login(process.env.TOKEN).catch(error => {
-  console.error('Login failed:', error);
-  process.exit(1);
-});
+client.login(process.env.TOKEN).catch(console.error);
