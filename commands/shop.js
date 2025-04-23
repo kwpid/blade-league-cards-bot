@@ -1,4 +1,3 @@
-
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import fs from 'fs/promises';
 import path from 'path';
