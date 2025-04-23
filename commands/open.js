@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from "discord.js";
+import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -6,7 +6,6 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const inventoryPath = path.join(__dirname, '../data/userInventories.json');
 const cardsPath = path.join(__dirname, '../data/cards.json');
-const shopDataPath = path.join(__dirname, '../data/shopItems.json');
 
 async function getInventory(userId) {
   try {
@@ -102,53 +101,30 @@ export default {
       });
     }
     
-    // Get pack details including rarity chances
-    const pack = inventory.packs[packIndex];
-    
-    if (!pack.rarities) {
-      return interaction.reply({
-        content: "❌ This pack doesn't have valid rarity settings!",
-        ephemeral: true
-      });
-    }
-    
     // Get all available cards
     const allCards = JSON.parse(await fs.readFile(cardsPath, 'utf8'));
     
-    // Select a random card based on pack's rarity weights
-    const rarityEntries = Object.entries(pack.rarities).filter(([_, weight]) => weight > 0);
-    const totalWeight = rarityEntries.reduce((sum, [_, weight]) => sum + weight, 0);
+    // Determine rarity distribution (weighted random)
+    const rarityWeights = {
+      common: 50,
+      uncommon: 30,
+      rare: 15,
+      legendary: 4,
+      mythic: 1
+    };
     
-    if (totalWeight <= 0) {
-      return interaction.reply({
-        content: "❌ This pack has no valid rarity weights configured!",
-        ephemeral: true
-      });
-    }
-    
+    // Select a random card based on rarity weights
+    let selectedCard;
+    const totalWeight = Object.values(rarityWeights).reduce((a, b) => a + b, 0);
     let random = Math.random() * totalWeight;
-    let selectedRarity;
     
-    for (const [rarity, weight] of rarityEntries) {
-      random -= weight;
+    for (const card of allCards) {
+      random -= rarityWeights[card.rarity];
       if (random <= 0) {
-        selectedRarity = rarity;
+        selectedCard = card;
         break;
       }
     }
-    
-    // Filter cards by selected rarity
-    const eligibleCards = allCards.filter(card => card.rarity === selectedRarity);
-    
-    if (eligibleCards.length === 0) {
-      return interaction.reply({
-        content: `❌ No cards available for the selected rarity (${selectedRarity})!`,
-        ephemeral: true
-      });
-    }
-    
-    // Select random card from eligible ones
-    const selectedCard = eligibleCards[Math.floor(Math.random() * eligibleCards.length)];
     
     // Determine variant
     const variant = getRandomVariant();
@@ -178,16 +154,8 @@ export default {
       deluxe: "Deluxe "
     };
     
-    const rarityColors = {
-      common: 0x808080,
-      uncommon: 0x2ecc71,
-      rare: 0x3498db,
-      legendary: 0x9b59b6,
-      mythic: 0xf1c40f
-    };
-    
     const embed = new EmbedBuilder()
-      .setColor(rarityColors[selectedCard.rarity] || 0x00ff00)
+      .setColor(0x00ff00)
       .setTitle(`🎉 You opened a ${variantDisplay[variant]}${selectedCard.name}!`)
       .setDescription(`⭐ ${obtainedCard.value} star value`)
       .addFields(
@@ -195,7 +163,7 @@ export default {
         { name: "Variant", value: variant.toUpperCase(), inline: true },
         { name: "Stats", value: `OFF: ${modifiedStats.OFF}\nDEF: ${modifiedStats.DEF}\nABL: ${modifiedStats.ABL}\nMCH: ${modifiedStats.MCH}` }
       )
-      .setFooter({ text: `From ${pack.name} pack` });
+      .setFooter({ text: "Added to your card collection!" });
     
     await interaction.reply({ embeds: [embed] });
   },
