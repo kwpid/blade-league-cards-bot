@@ -1,24 +1,49 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import { query } from '../db.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const inventoryPath = path.join(__dirname, '../data/userInventories.json');
 
 const ITEMS_PER_PAGE = 5;
 
+// Rarity colors for cards
+const RARITY_COLORS = {
+  common: 0x808080,    // Gray
+  uncommon: 0x2ecc71,  // Green
+  rare: 0x3498db,      // Blue
+  legendary: 0x9b59b6, // Purple
+  mythic: 0xf1c40f     // Gold
+};
+
+// Emoji representations for better visual distinction
+const TYPE_EMOJIS = {
+  packs: "📦",
+  cards: "🃏"
+};
+
 async function getInventory(userId) {
-  const res = await query(
-    `INSERT INTO user_inventories (user_id) 
-     VALUES ($1) 
-     ON CONFLICT (user_id) 
-     DO NOTHING 
-     RETURNING packs, cards`,
-    [userId]
-  );
-  return res.rows[0] || { packs: [], cards: [] };
+  try {
+    const data = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
+    return data[userId] || { packs: [], cards: [] };
+  } catch {
+    return { packs: [], cards: [] };
+  }
 }
 
 export default {
   data: new SlashCommandBuilder()
     .setName("inventory")
-    .setDescription("View your inventory of purchased items")
+    .setDescription("View your inventory")
+    .addStringOption(option =>
+      option.setName("type")
+        .setDescription("Type of inventory to view")
+        .setRequired(false)
+        .addChoices(
+          { name: "Packs", value: "packs" },
+          { name: "Cards", value: "cards" }
+        ))
     .addIntegerOption(option =>
       option.setName("page")
         .setDescription("Page number to view")
@@ -26,62 +51,116 @@ export default {
         .setMinValue(1)),
 
   async execute(interaction) {
+    const inventoryType = interaction.options.getString("type") || "packs";
     const page = interaction.options.getInteger("page") || 1;
     const userId = interaction.user.id;
     const inventory = await getInventory(userId);
     
-    if (inventory.packs.length === 0 && inventory.cards.length === 0) {
+    const items = inventory[inventoryType];
+    const totalItems = items.length;
+    
+    if (totalItems === 0) {
       return interaction.reply({
-        content: "Your inventory is empty! Use `/shop` to view available packs.",
+        content: `${TYPE_EMOJIS[inventoryType]} Your ${inventoryType} inventory is empty!`,
         ephemeral: true
       });
     }
     
-    // Display packs only (modify as needed)
-    const totalPages = Math.ceil(inventory.packs.length / ITEMS_PER_PAGE);
-    if (page > totalPages && totalPages > 0) {
+    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
+    if (page > totalPages) {
       return interaction.reply({
-        content: `Page ${page} doesn't exist! Your inventory has ${totalPages} page(s).`,
+        content: `⚠️ Page ${page} doesn't exist! Your ${inventoryType} inventory has ${totalPages} page(s).`,
         ephemeral: true
       });
     }
     
     const startIdx = (page - 1) * ITEMS_PER_PAGE;
-    const pageItems = inventory.packs.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+    const endIdx = startIdx + ITEMS_PER_PAGE;
+    const pageItems = items.slice(startIdx, endIdx);
     
+    // Create different embeds for packs vs cards
     const embed = new EmbedBuilder()
-      .setColor(0x7289DA)
-      .setTitle(`${interaction.user.username}'s Inventory`)
-      .setDescription(`Page ${page}/${totalPages}`)
-      .addFields(
-        pageItems.map((item, idx) => ({
-          name: `${startIdx + idx + 1}. ${item.name}`,
-          value: `ID: ${item.id}\nPurchased: ${new Date(item.purchaseDate).toLocaleDateString()}`,
-          inline: true
-        }))
-      );
+      .setTitle(`${TYPE_EMOJIS[inventoryType]} ${interaction.user.username}'s ${inventoryType.toUpperCase()}`)
+      .setDescription(`📄 Page ${page}/${totalPages} | 📦 Total: ${totalItems}`);
+
+    if (inventoryType === "packs") {
+      embed.setColor(0x3498db) // Blue for packs
+        .addFields(
+          pageItems.map((item, idx) => ({
+            name: `📦 ${startIdx + idx + 1}. ${item.name}`,
+            value: [
+              `🆔 ID: ${item.id}`,
+              `💰 Value: ${item.price || 'N/A'} stars`,
+              `\`/open ${item.id}\` to open this pack`,
+              ...(item.description ? [`📝 ${item.description}`] : [])
+            ].join('\n'),
+            inline: false
+          }))
+        );
+    } else {
+      // Cards embed
+      embed.setColor(RARITY_COLORS[pageItems[0]?.rarity] || 0x7289DA) // Use first card's rarity color
+        .addFields(
+          pageItems.map((card, idx) => {
+            const variantEmoji = {
+              normal: "",
+              silver: "🥈 ",
+              gold: "🏆 ",
+              deluxe: "💎 "
+            }[card.variant];
+            
+            return {
+              name: `${variantEmoji}${startIdx + idx + 1}. ${card.name}`,
+              value: [
+                `✨ Rarity: ${card.rarity.toUpperCase()}`,
+                `⭐ Value: ${card.value} stars`,
+                `⚔️ OFF: ${card.stats.OFF} | 🛡️ DEF: ${card.stats.DEF}`,
+                `🎯 ABL: ${card.stats.ABL} | 🤖 MCH: ${card.stats.MCH}`,
+                `🆔 Card ID: ${card.cardId}`
+              ].join('\n'),
+              inline: true
+            };
+          })
+        );
+    }
     
+    // Pagination buttons
     const row = new ActionRowBuilder();
+    
     if (page > 1) {
       row.addComponents(
         new ButtonBuilder()
-          .setCustomId(`inventory_prev_${page - 1}`)
-          .setLabel("Previous")
-          .setStyle(ButtonStyle.Primary)
+          .setCustomId(`inventory_${inventoryType}_prev_${page - 1}`)
+          .setLabel("◀ Previous")
+          .setStyle(ButtonStyle.Secondary)
       );
     }
+    
     if (page < totalPages) {
       row.addComponents(
         new ButtonBuilder()
-          .setCustomId(`inventory_next_${page + 1}`)
-          .setLabel("Next")
+          .setCustomId(`inventory_${inventoryType}_next_${page + 1}`)
+          .setLabel("Next ▶")
+          .setStyle(ButtonStyle.Secondary)
+      );
+    }
+    
+    // Add type switcher if there are items in both categories
+    const otherType = inventoryType === "packs" ? "cards" : "packs";
+    if (inventory[otherType]?.length > 0) {
+      row.addComponents(
+        new ButtonBuilder()
+          .setCustomId(`inventory_${otherType}_switch_1`)
+          .setLabel(`View ${otherType}`)
           .setStyle(ButtonStyle.Primary)
       );
     }
     
-    await interaction.reply({ 
+    const replyOptions = { 
       embeds: [embed],
-      components: row.components.length > 0 ? [row] : []
-    });
+      components: row.components?.length > 0 ? [row] : []
+    };
+    
+    await interaction.reply(replyOptions);
   },
 };
