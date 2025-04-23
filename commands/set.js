@@ -1,5 +1,16 @@
 import { SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
-import { setBalance } from "../firebase.js";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dataPath = path.join(__dirname, "../data/userBalances.json");
+
+async function setBalance(userId, amount) {
+  const data = JSON.parse(await fs.readFile(dataPath, "utf8"));
+  data[userId] = amount;
+  await fs.writeFile(dataPath, JSON.stringify(data, null, 2));
+}
 
 export default {
   data: new SlashCommandBuilder()
@@ -31,7 +42,9 @@ export default {
     const targetUser = interaction.options.getUser("user");
     const amount = interaction.options.getInteger("amount");
 
-    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (
+      !interaction.member.permissions.has(PermissionFlagsBits.Administrator)
+    ) {
       return interaction.reply({
         content: "❌ You don't have permission to use this command!",
         ephemeral: true,
