@@ -1,10 +1,32 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
+import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getInventory, updateInventory } from "../firebase.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const inventoryPath = path.join(__dirname, '../data/userInventories.json');
 const cardsPath = path.join(__dirname, '../data/cards.json');
+
+async function getInventory(userId) {
+  try {
+    const data = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
+    return data[userId] || { packs: [], cards: [] };
+  } catch {
+    return { packs: [], cards: [] };
+  }
+}
+
+async function updateInventory(userId, inventory) {
+  let allInventories = {};
+  try {
+    allInventories = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
+  } catch {
+    allInventories = {};
+  }
+  
+  allInventories[userId] = inventory;
+  await fs.writeFile(inventoryPath, JSON.stringify(allInventories, null, 2));
+}
 
 function getRandomVariant() {
   const roll = Math.random() * 100;
