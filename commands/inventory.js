@@ -1,152 +1,137 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import { getInventory, updateCardInAllInventories } from "../firebase.js";
+import fs from "fs";
+import path from "path";
+import { Client, Collection, GatewayIntentBits } from "discord.js";
+import { config } from "dotenv";
+import { REST, Routes } from "discord.js";
 
-const ITEMS_PER_PAGE = 5;
+config();
 
-// Rarity colors for cards
-const RARITY_COLORS = {
-  common: 0x808080,    // Gray
-  uncommon: 0x2ecc71,  // Green
-  rare: 0x3498db,      // Blue
-  legendary: 0x9b59b6, // Purple
-  mythic: 0xf1c40f     // Gold
-};
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Emoji representations for better visual distinction
-const TYPE_EMOJIS = {
-  packs: "📦",
-  cards: "🃏"
-};
+client.commands = new Collection();
 
-export default {
-  data: new SlashCommandBuilder()
-    .setName("inventory")
-    .setDescription("View your inventory")
-    .addStringOption(option =>
-      option.setName("type")
-        .setDescription("Type of inventory to view")
-        .setRequired(false)
-        .addChoices(
-          { name: "Packs", value: "packs" },
-          { name: "Cards", value: "cards" }
-        ))
-    .addIntegerOption(option =>
-      option.setName("page")
-        .setDescription("Page number to view")
-        .setRequired(false)
-        .setMinValue(1)),
+// Read commands from ./commands/
+const commands = [];
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const commandsPath = path.join(__dirname, "commands");
+const commandFiles = fs
+  .readdirSync(commandsPath)
+  .filter((file) => file.endsWith(".js"));
 
-  async execute(interaction) {
-    const inventoryType = interaction.options.getString("type") || "packs";
-    const page = interaction.options.getInteger("page") || 1;
-    const userId = interaction.user.id;
-    const inventory = await getInventory(userId);
-    
-    const items = inventory[inventoryType];
-    const totalItems = items.length;
-    
-    if (totalItems === 0) {
-      return interaction.reply({
-        content: `${TYPE_EMOJIS[inventoryType]} Your ${inventoryType} inventory is empty!`,
-        ephemeral: true
+for (const file of commandFiles) {
+  const filePath = path.join(commandsPath, file);
+  const command = (await import(`./commands/${file}`)).default;
+  if ("data" in command && "execute" in command) {
+    client.commands.set(command.data.name, command);
+    commands.push(command.data.toJSON());
+  }
+}
+
+// Register slash commands with Discord
+const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+
+try {
+  console.log("Refreshing application (/) commands...");
+  // First, remove all global commands
+  await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: [] });
+  // Then register guild-specific commands
+  await rest.put(
+    Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+    { body: commands }
+  );
+  console.log("Successfully reloaded application (/) commands.");
+} catch (error) {
+  console.error(error);
+}
+
+client.on("interactionCreate", async (interaction) => {
+  if (interaction.isChatInputCommand()) {
+    const command = client.commands.get(interaction.commandName);
+
+    if (!command) return;
+
+    try {
+      await command.execute(interaction);
+    } catch (error) {
+      console.error(error);
+      await interaction.reply({
+        content: "There was an error while executing this command!",
+        ephemeral: true,
       });
     }
-    
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-    if (page > totalPages) {
-      return interaction.reply({
-        content: `⚠️ Page ${page} doesn't exist! Your ${inventoryType} inventory has ${totalPages} page(s).`,
-        ephemeral: true
-      });
+  } else if (interaction.isButton()) {
+    if (interaction.customId.startsWith('inventory_')) {
+      const parts = interaction.customId.split('_');
+      const inventoryCommand = client.commands.get('inventory');
+      
+      if (inventoryCommand) {
+        // Handle both old and new button formats
+        let type, page;
+        
+        if (parts.length === 3) {
+          // Old format: inventory_[action]_[page]
+          type = "packs"; // Default to packs for backward compatibility
+          page = parts[2];
+        } else {
+          // New format: inventory_[type]_[action]_[page]
+          type = parts[1];
+          page = parts[3];
+        }
+        
+        // Create a fake interaction object with the options
+        const fakeInteraction = {
+          ...interaction,
+          options: {
+            getString: () => type,
+            getInteger: () => parseInt(page)
+          },
+          user: interaction.user
+        };
+        
+        await inventoryCommand.execute(fakeInteraction);
+        await interaction.deferUpdate();
+      }
     }
-    
-    const startIdx = (page - 1) * ITEMS_PER_PAGE;
-    const endIdx = startIdx + ITEMS_PER_PAGE;
-    const pageItems = items.slice(startIdx, endIdx);
-    
-    // Create different embeds for packs vs cards
-    const embed = new EmbedBuilder()
-      .setTitle(`${TYPE_EMOJIS[inventoryType]} ${interaction.user.username}'s ${inventoryType.toUpperCase()}`)
-      .setDescription(`📄 Page ${page}/${totalPages} | 📦 Total: ${totalItems}`);
+  }
+});
 
-    if (inventoryType === "packs") {
-      embed.setColor(0x3498db) // Blue for packs
-        .addFields(
-          pageItems.map((item, idx) => ({
-            name: `📦 ${startIdx + idx + 1}. ${item.name}`,
-            value: [
-              `🆔 ID: ${item.id}`,
-              `💰 Value: ${item.price || 'N/A'} stars`,
-              `\`/open ${item.id}\` to open this pack`,
-              ...(item.description ? [`📝 ${item.description}`] : [])
-            ].join('\n'),
-            inline: false
-          }))
-        );
-    } else {
-      // Cards embed
-      embed.setColor(RARITY_COLORS[pageItems[0]?.rarity] || 0x7289DA) // Use first card's rarity color
-        .addFields(
-          pageItems.map((card, idx) => {
-            const variantEmoji = {
-              normal: "",
-              silver: "🥈 ",
-              gold: "🏆 ",
-              deluxe: "💎 "
-            }[card.variant];
-            
-            return {
-              name: `${variantEmoji}${startIdx + idx + 1}. ${card.name}`,
-              value: [
-                `✨ Rarity: ${card.rarity.toUpperCase()}`,
-                `⭐ Value: ${card.value} stars`,
-                `⚔️ OFF: ${card.stats.OFF} | 🛡️ DEF: ${card.stats.DEF}`,
-                `🎯 ABL: ${card.stats.ABL} | 🤖 MCH: ${card.stats.MCH}`,
-                `🆔 Card ID: ${card.cardId}`
-              ].join('\n'),
-              inline: true
-            };
-          })
-        );
+// When the client is ready, run this code (only once)
+client.once('ready', () => {
+    console.log(`Ready! Logged in as ${client.user.tag}`);
+    console.log('Available commands:', Array.from(client.commands.keys()));
+    
+    // Ensure data directories exist
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir);
     }
     
-    // Pagination buttons
-    const row = new ActionRowBuilder();
-    
-    if (page > 1) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inventory_${inventoryType}_prev_${page - 1}`)
-          .setLabel("◀ Previous")
-          .setStyle(ButtonStyle.Secondary)
-      );
+    // Initialize inventory file if it doesn't exist
+    const inventoryFile = path.join(dataDir, 'userInventories.json');
+    if (!fs.existsSync(inventoryFile)) {
+      fs.writeFileSync(inventoryFile, '{}');
     }
     
-    if (page < totalPages) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inventory_${inventoryType}_next_${page + 1}`)
-          .setLabel("Next ▶")
-          .setStyle(ButtonStyle.Secondary)
-      );
+    // Initialize cards file if it doesn't exist
+    const cardsFile = path.join(dataDir, 'cards.json');
+    if (!fs.existsSync(cardsFile)) {
+      fs.writeFileSync(cardsFile, JSON.stringify([
+        {
+          "id": 1,
+          "name": "Kupidcat",
+          "stats": {
+            "OFF": 76,
+            "DEF": 87,
+            "ABL": 60,
+            "MCH": 82
+          },
+          "rarity": "rare",
+          "availableTypes": "all"
+        }
+      ], null, 2));
     }
-    
-    // Add type switcher if there are items in both categories
-    const otherType = inventoryType === "packs" ? "cards" : "packs";
-    if (inventory[otherType]?.length > 0) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inventory_${otherType}_switch_1`)
-          .setLabel(`View ${otherType}`)
-          .setStyle(ButtonStyle.Primary)
-      );
-    }
-    
-    const replyOptions = { 
-      embeds: [embed],
-      components: row.components?.length > 0 ? [row] : []
-    };
-    
-    await interaction.reply(replyOptions);
-  },
-};
+});
+
+client.login(process.env.TOKEN).catch(console.error);
