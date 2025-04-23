@@ -48,20 +48,39 @@ try {
 }
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+  if (interaction.isChatInputCommand()) {
+    const command = client.commands.get(interaction.commandName);
 
-  const command = client.commands.get(interaction.commandName);
+    if (!command) return;
 
-  if (!command) return;
-
-  try {
-    await command.execute(interaction);
-  } catch (error) {
-    console.error(error);
-    await interaction.reply({
-      content: "There was an error while executing this command!",
-      ephemeral: true,
-    });
+    try {
+      await command.execute(interaction);
+    } catch (error) {
+      console.error(error);
+      await interaction.reply({
+        content: "There was an error while executing this command!",
+        ephemeral: true,
+      });
+    }
+  } else if (interaction.isButton()) {
+    if (interaction.customId.startsWith('inventory_')) {
+      const [_, action, page] = interaction.customId.split('_');
+      const inventoryCommand = client.commands.get('inventory');
+      
+      if (inventoryCommand) {
+        // Create a fake interaction object with the page option
+        const fakeInteraction = {
+          ...interaction,
+          options: {
+            getInteger: () => parseInt(page)
+          },
+          user: interaction.user
+        };
+        
+        await inventoryCommand.execute(fakeInteraction);
+        await interaction.deferUpdate();
+      }
+    }
   }
 });
 
