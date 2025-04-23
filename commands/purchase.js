@@ -28,10 +28,10 @@ async function addToInventory(userId, item) {
   }
   
   if (!inventories[userId]) {
-    inventories[userId] = [];
+    inventories[userId] = { packs: [], cards: [] };
   }
   
-  inventories[userId].push({
+  inventories[userId].packs.push({
     ...item,
     purchaseDate: new Date().toISOString()
   });
