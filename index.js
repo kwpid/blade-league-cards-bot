@@ -3,6 +3,7 @@ import path from "path";
 import { Client, Collection, GatewayIntentBits } from "discord.js";
 import { config } from "dotenv";
 import { REST, Routes } from "discord.js";
+import { query } from './db.js';
 
 config();
 
@@ -113,7 +114,21 @@ client.once('ready', () => {
     if (!fs.existsSync(inventoryFile)) {
       fs.writeFileSync(inventoryFile, '{}');
     }
-    
+    await query(`
+  CREATE TABLE IF NOT EXISTS user_balances (
+    user_id TEXT PRIMARY KEY,
+    balance INTEGER NOT NULL DEFAULT 100
+  );
+`);
+
+await query(`
+  CREATE TABLE IF NOT EXISTS user_inventories (
+    user_id TEXT PRIMARY KEY,
+    packs JSONB NOT NULL DEFAULT '[]',
+    cards JSONB NOT NULL DEFAULT '[]'
+  );
+`);
+console.log("Database tables ready!");
     // Initialize cards file if it doesn't exist
     const cardsFile = path.join(dataDir, 'cards.json');
     if (!fs.existsSync(cardsFile)) {
