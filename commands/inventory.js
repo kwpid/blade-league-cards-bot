@@ -1,10 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const inventoryPath = path.join(__dirname, '../data/userInventories.json');
+import { getInventory, updateCardInAllInventories } from "../firebase.js";
 
 const ITEMS_PER_PAGE = 5;
 
@@ -22,15 +17,6 @@ const TYPE_EMOJIS = {
   packs: "📦",
   cards: "🃏"
 };
-
-async function getInventory(userId) {
-  try {
-    const data = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
-    return data[userId] || { packs: [], cards: [] };
-  } catch {
-    return { packs: [], cards: [] };
-  }
-}
 
 export default {
   data: new SlashCommandBuilder()
