@@ -1,64 +1,48 @@
-import { SlashCommandBuilder } from "discord.js";
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { getBalance, setBalance, getInventory, updateInventory } from "../firebase.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const shopDataPath = path.join(__dirname, '../data/shopItems.json');
+import { SlashCommandBuilder, PermissionFlagsBits } from "discord.js";
+import { setBalance } from "../firebase.js";
 
 export default {
   data: new SlashCommandBuilder()
-    .setName("purchase")
-    .setDescription("Purchase an item from the shop")
-    .addStringOption(option =>
-      option.setName("type")
-        .setDescription("The type of item to purchase")
+    .setName("set")
+    .setDescription("Set a user's star balance (Admin only)")
+    .addStringOption((option) =>
+      option
+        .setName("value")
+        .setDescription("The value type to set")
         .setRequired(true)
-        .addChoices({ name: "shop", value: "shop" }))
-    .addIntegerOption(option =>
-      option.setName("id")
-        .setDescription("The ID of the item to purchase")
-        .setRequired(true)
-        .setMinValue(1)),
+        .addChoices({ name: "stars", value: "stars" }),
+    )
+    .addUserOption((option) =>
+      option
+        .setName("user")
+        .setDescription("The user to modify")
+        .setRequired(true),
+    )
+    .addIntegerOption((option) =>
+      option
+        .setName("amount")
+        .setDescription("The amount to set")
+        .setRequired(true),
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   async execute(interaction) {
-    const type = interaction.options.getString("type");
-    const id = interaction.options.getInteger("id");
-    
-    if (type === "shop") {
-      const shopData = JSON.parse(await fs.readFile(shopDataPath, 'utf8'));
-      const pack = shopData.packs.find(p => p.id === id);
-      
-      if (!pack) {
-        return interaction.reply({ 
-          content: "❌ Invalid pack ID! Use `/shop` to see available packs.", 
-          ephemeral: true 
-        });
-      }
+    const value = interaction.options.getString("value");
+    const targetUser = interaction.options.getUser("user");
+    const amount = interaction.options.getInteger("amount");
 
-      const userBalance = await getBalance(interaction.user.id);
-      
-      if (userBalance < pack.price) {
-        return interaction.reply({ 
-          content: `❌ You don't have enough stars! You need ${pack.price} stars but have ${userBalance} stars.`, 
-          ephemeral: true 
-        });
-      }
-
-      // Deduct stars and complete purchase
-      await setBalance(interaction.user.id, userBalance - pack.price);
-      
-      // Get current inventory and add the pack
-      const inventory = await getInventory(interaction.user.id);
-      inventory.packs.push({
-        ...pack,
-        purchaseDate: new Date().toISOString()
+    if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+      return interaction.reply({
+        content: "❌ You don't have permission to use this command!",
+        ephemeral: true,
       });
-      await updateInventory(interaction.user.id, inventory);
-      
+    }
+
+    if (value === "stars") {
+      await setBalance(targetUser.id, amount);
       await interaction.reply({
-        content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${userBalance - pack.price} stars.`,
-        ephemeral: true
+        content: `✅ Set ${targetUser.username}'s stars to ⭐ ${amount}`,
+        ephemeral: true,
       });
     }
   },
