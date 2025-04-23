@@ -1,4 +1,3 @@
-
 import { SlashCommandBuilder } from "discord.js";
 import fs from 'fs/promises';
 import path from 'path';
@@ -7,6 +6,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataPath = path.join(__dirname, '../data/userBalances.json');
 const shopDataPath = path.join(__dirname, '../data/shopItems.json');
+const inventoryPath = path.join(__dirname, '../data/userInventories.json');
 
 async function getBalance(userId) {
   const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
@@ -17,6 +17,26 @@ async function setBalance(userId, amount) {
   const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
   data[userId] = amount;
   await fs.writeFile(dataPath, JSON.stringify(data, null, 2));
+}
+
+async function addToInventory(userId, item) {
+  let inventories = {};
+  try {
+    inventories = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
+  } catch {
+    inventories = {};
+  }
+  
+  if (!inventories[userId]) {
+    inventories[userId] = [];
+  }
+  
+  inventories[userId].push({
+    ...item,
+    purchaseDate: new Date().toISOString()
+  });
+  
+  await fs.writeFile(inventoryPath, JSON.stringify(inventories, null, 2));
 }
 
 export default {
@@ -60,6 +80,13 @@ export default {
 
       // Deduct stars and complete purchase
       await setBalance(interaction.user.id, userBalance - pack.price);
+      
+      // Add to inventory
+      await addToInventory(interaction.user.id, {
+        id: pack.id,
+        type: "pack",
+        name: pack.name
+      });
       
       await interaction.reply({
         content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${userBalance - pack.price} stars.`,
