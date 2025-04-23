@@ -58,4 +58,34 @@ export default {
     const allCards = cardsRes.rows;
     
     // Random card selection logic (same as before)
-   
+    const selectedCard = allCards[Math.floor(Math.random() * allCards.length)];
+    const variant = getRandomVariant();
+    const modifiedStats = applyVariantBonuses(selectedCard, variant);
+    
+    // Add card to inventory
+    inventory.packs.splice(packIndex, 1);
+    inventory.cards.push({
+      cardId: selectedCard.id,
+      name: selectedCard.name,
+      variant,
+      stats: modifiedStats,
+      obtainedDate: new Date().toISOString()
+    });
+    
+    // Update DB
+    await query(
+      'UPDATE user_inventories SET packs = $1, cards = $2 WHERE user_id = $3',
+      [JSON.stringify(inventory.packs), JSON.stringify(inventory.cards), userId]
+    );
+    
+    // Send embed (same as before)
+    const embed = new EmbedBuilder()
+      .setTitle(`🎉 Opened ${selectedCard.name}!`)
+      .addFields(
+        { name: "Rarity", value: selectedCard.rarity, inline: true },
+        { name: "Variant", value: variant, inline: true }
+      );
+    
+    await interaction.reply({ embeds: [embed] });
+  },
+};
