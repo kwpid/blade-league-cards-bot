@@ -53,24 +53,6 @@ client.on("interactionCreate", async (interaction) => {
 
     if (!command) return;
 
-    // Check test mode
-    const config = JSON.parse(fs.readFileSync('./data/config.json'));
-    if (config.testMode && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return interaction.reply({
-        content: "❌ The bot is currently in test mode. Only administrators can use commands.",
-        ephemeral: true
-      });
-    }
-
-    // Check if command is admin-only and user has permissions
-    if (command.data.default_member_permissions && 
-        !interaction.member.permissions.has(command.data.default_member_permissions)) {
-      return interaction.reply({
-        content: "❌ You don't have permission to use this command!",
-        ephemeral: true
-      });
-    }
-
     try {
       await command.execute(interaction);
     } catch (error) {
@@ -86,11 +68,12 @@ client.on("interactionCreate", async (interaction) => {
       const inventoryCommand = client.commands.get('inventory');
       
       if (inventoryCommand) {
+        // Handle both old and new button formats
         let type, page;
         
         if (parts.length === 3) {
           // Old format: inventory_[action]_[page]
-          type = "packs";
+          type = "packs"; // Default to packs for backward compatibility
           page = parts[2];
         } else {
           // New format: inventory_[type]_[action]_[page]
@@ -98,16 +81,14 @@ client.on("interactionCreate", async (interaction) => {
           page = parts[3];
         }
         
+        // Create a fake interaction object with the options
         const fakeInteraction = {
           ...interaction,
           options: {
             getString: () => type,
             getInteger: () => parseInt(page)
           },
-          user: interaction.user,
-          member: interaction.member,
-          deferUpdate: interaction.deferUpdate.bind(interaction),
-          reply: interaction.reply.bind(interaction)
+          user: interaction.user
         };
         
         await inventoryCommand.execute(fakeInteraction);
@@ -134,6 +115,24 @@ client.once('ready', () => {
       fs.writeFileSync(inventoryFile, '{}');
     }
     
+    // Initialize cards file if it doesn't exist
+    const cardsFile = path.join(dataDir, 'cards.json');
+    if (!fs.existsSync(cardsFile)) {
+      fs.writeFileSync(cardsFile, JSON.stringify([
+        {
+          "id": 1,
+          "name": "Kupidcat",
+          "stats": {
+            "OFF": 76,
+            "DEF": 87,
+            "ABL": 60,
+            "MCH": 82
+          },
+          "rarity": "rare",
+          "availableTypes": "all"
+        }
+      ], null, 2));
+    }
 });
 
 client.login(process.env.TOKEN).catch(console.error);
