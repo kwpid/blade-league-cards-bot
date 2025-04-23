@@ -31,8 +31,13 @@ async function addToInventory(userId, item) {
     inventories[userId] = { packs: [], cards: [] };
   }
   
+  // Get full pack details from shop
+  const shopData = JSON.parse(await fs.readFile(shopDataPath, 'utf8'));
+  const fullPack = shopData.packs.find(p => p.id === item.id);
+  
   inventories[userId].packs.push({
     ...item,
+    ...fullPack, // Include all pack details
     purchaseDate: new Date().toISOString()
   });
   
