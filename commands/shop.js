@@ -1,5 +1,10 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import { query } from '../db.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const shopDataPath = path.join(__dirname, '../data/shopItems.json');
 
 export default {
   data: new SlashCommandBuilder()
@@ -7,19 +12,20 @@ export default {
     .setDescription("View available packs in the shop"),
 
   async execute(interaction) {
-    const shopRes = await query('SELECT * FROM shop_items');
-    const packs = shopRes.rows;
+    const shopData = JSON.parse(await fs.readFile(shopDataPath, 'utf8'));
     
     const embed = new EmbedBuilder()
-      .setTitle("🏪 Shop")
-      .setDescription("Available packs:")
+      .setColor(0x00ff00)
+      .setTitle("🏪 Card Pack Shop")
+      .setDescription("Here are the available packs you can purchase:")
       .addFields(
-        packs.map(pack => ({
+        shopData.packs.map(pack => ({
           name: `${pack.name} (ID: ${pack.id})`,
-          value: `Price: ${pack.price} stars`
+          value: `💰 ${pack.price} stars\n${pack.description}`
         }))
-      );
-    
+      )
+      .setFooter({ text: "Use /purchase shop <id> to buy a pack!" });
+
     await interaction.reply({ embeds: [embed] });
   },
 };
