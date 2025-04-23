@@ -1,23 +1,24 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import { query } from '../db.js';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-async function getBalance(userId) {
-  const res = await query(
-    `INSERT INTO user_balances (user_id, balance) 
-     VALUES ($1, 100) 
-     ON CONFLICT (user_id) 
-     DO UPDATE SET balance = user_balances.balance 
-     RETURNING balance`,
-    [userId]
-  );
-  return res.rows[0].balance;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dataPath = path.join(__dirname, '../data/userBalances.json');
+
+async function ensureDataFile() {
+  try {
+    await fs.access(dataPath);
+  } catch {
+    await fs.mkdir(path.dirname(dataPath), { recursive: true });
+    await fs.writeFile(dataPath, '{}');
+  }
 }
 
-async function setBalance(userId, amount) {
-  await query(
-    'UPDATE user_balances SET balance = $1 WHERE user_id = $2',
-    [amount, userId]
-  );
+async function getBalance(userId) {
+  await ensureDataFile();
+  const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
+  return data[userId] || 100;
 }
 
 function formatStars(number) {
@@ -54,4 +55,4 @@ export default {
 
     await interaction.reply({ embeds: [embed] });
   },
-};
+}
