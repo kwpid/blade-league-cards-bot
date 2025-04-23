@@ -103,18 +103,6 @@ client.once('ready', () => {
     console.log(`Ready! Logged in as ${client.user.tag}`);
     console.log('Available commands:', Array.from(client.commands.keys()));
     
-    // Ensure data directories exist
-    const dataDir = path.join(__dirname, 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir);
-    }
-    
-    // Initialize inventory file if it doesn't exist
-    const inventoryFile = path.join(dataDir, 'userInventories.json');
-    if (!fs.existsSync(inventoryFile)) {
-      fs.writeFileSync(inventoryFile, '{}');
-    }
-    
     // Initialize cards file if it doesn't exist
     const cardsFile = path.join(dataDir, 'cards.json');
     if (!fs.existsSync(cardsFile)) {
