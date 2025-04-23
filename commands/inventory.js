@@ -1,20 +1,18 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const inventoryPath = path.join(__dirname, '../data/userInventories.json');
+import { query } from '../db.js';
 
 const ITEMS_PER_PAGE = 5;
 
 async function getInventory(userId) {
-  try {
-    const data = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
-    return data[userId] || [];
-  } catch {
-    return [];
-  }
+  const res = await query(
+    `INSERT INTO user_inventories (user_id) 
+     VALUES ($1) 
+     ON CONFLICT (user_id) 
+     DO NOTHING 
+     RETURNING packs, cards`,
+    [userId]
+  );
+  return res.rows[0] || { packs: [], cards: [] };
 }
 
 export default {
@@ -32,15 +30,16 @@ export default {
     const userId = interaction.user.id;
     const inventory = await getInventory(userId);
     
-    if (inventory.length === 0) {
+    if (inventory.packs.length === 0 && inventory.cards.length === 0) {
       return interaction.reply({
-        content: "Your inventory is empty! Use `/shop` to view available packs to purchase.",
+        content: "Your inventory is empty! Use `/shop` to view available packs.",
         ephemeral: true
       });
     }
     
-    const totalPages = Math.ceil(inventory.length / ITEMS_PER_PAGE);
-    if (page > totalPages) {
+    // Display packs only (modify as needed)
+    const totalPages = Math.ceil(inventory.packs.length / ITEMS_PER_PAGE);
+    if (page > totalPages && totalPages > 0) {
       return interaction.reply({
         content: `Page ${page} doesn't exist! Your inventory has ${totalPages} page(s).`,
         ephemeral: true
@@ -48,8 +47,7 @@ export default {
     }
     
     const startIdx = (page - 1) * ITEMS_PER_PAGE;
-    const endIdx = startIdx + ITEMS_PER_PAGE;
-    const pageItems = inventory.slice(startIdx, endIdx);
+    const pageItems = inventory.packs.slice(startIdx, startIdx + ITEMS_PER_PAGE);
     
     const embed = new EmbedBuilder()
       .setColor(0x7289DA)
@@ -58,14 +56,12 @@ export default {
       .addFields(
         pageItems.map((item, idx) => ({
           name: `${startIdx + idx + 1}. ${item.name}`,
-          value: `Type: ${item.type}\nID: ${item.id}\nPurchased: ${new Date(item.purchaseDate).toLocaleDateString()}`,
+          value: `ID: ${item.id}\nPurchased: ${new Date(item.purchaseDate).toLocaleDateString()}`,
           inline: true
         }))
-      )
-      .setFooter({ text: `Total items: ${inventory.length}` });
+      );
     
     const row = new ActionRowBuilder();
-    
     if (page > 1) {
       row.addComponents(
         new ButtonBuilder()
@@ -74,7 +70,6 @@ export default {
           .setStyle(ButtonStyle.Primary)
       );
     }
-    
     if (page < totalPages) {
       row.addComponents(
         new ButtonBuilder()
@@ -84,11 +79,9 @@ export default {
       );
     }
     
-    const replyOptions = { embeds: [embed] };
-    if (row.components?.length > 0) {
-      replyOptions.components = [row];
-    }
-    
-    await interaction.reply(replyOptions);
+    await interaction.reply({ 
+      embeds: [embed],
+      components: row.components.length > 0 ? [row] : []
+    });
   },
 };
