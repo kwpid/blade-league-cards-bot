@@ -1,6 +1,26 @@
-// balance.js
+@@ -0,0 +1,58 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import { getBalance } from "../firebase.js";
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dataPath = path.join(__dirname, '../data/userBalances.json');
+
+async function ensureDataFile() {
+  try {
+    await fs.access(dataPath);
+  } catch {
+    await fs.mkdir(path.dirname(dataPath), { recursive: true });
+    await fs.writeFile(dataPath, '{}');
+  }
+}
+
+async function getBalance(userId) {
+  await ensureDataFile();
+  const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
+  return data[userId] || 100;
+}
 
 function formatStars(number) {
   if (number < 1000) return number.toString();
@@ -23,42 +43,17 @@ export default {
         .setRequired(false)),
 
   async execute(interaction) {
-    try {
-      // Defer reply to give more time for Firebase operation
-      await interaction.deferReply();
-      
-      const targetUser = interaction.options.getUser("user") || interaction.user;
-      const balance = await getBalance(targetUser.id);
-      
-      if (balance === undefined || balance === null) {
-        throw new Error("Failed to retrieve balance");
-      }
+    const targetUser = interaction.options.getUser("user") || interaction.user;
+    const balance = await getBalance(targetUser.id);
+    const formatted = formatStars(balance);
 
-      const formatted = formatStars(balance);
+    const embed = new EmbedBuilder()
+      .setColor(0xffd700)
+      .setTitle("⭐ Star Balance")
+      .setDescription(`${targetUser.id === interaction.user.id ? "You have" : `${targetUser.username} has`} **⭐ ${formatted} stars!**`)
+      .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+      .setTimestamp();
 
-      const embed = new EmbedBuilder()
-        .setColor(0xffd700)
-        .setTitle("⭐ Star Balance")
-        .setDescription(`${targetUser.id === interaction.user.id ? "You have" : `${targetUser.username} has`} **⭐ ${formatted} stars!**`)
-        .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-        .setFooter({ text: "Blade League Cards" })
-        .setTimestamp();
-
-      await interaction.editReply({ embeds: [embed] });
-    } catch (error) {
-      console.error("Error in balance command:", error);
-      
-      // Try to edit the deferred reply if it exists
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({
-          content: "❌ There was an error checking your balance. Please try again later.",
-        });
-      } else {
-        await interaction.reply({
-          content: "❌ There was an error checking your balance. Please try again later.",
-          ephemeral: true
-        });
-      }
-    }
+    await interaction.reply({ embeds: [embed] });
   },
 };
