@@ -1,23 +1,43 @@
-
 {
   "packs": [
     {
       "id": 1,
       "name": "Starter Pack",
       "price": 100,
-      "description": "A basic pack to get you started!"
+      "description": "A basic pack to get you started!",
+      "rarities": {
+        "common": 60,
+        "uncommon": 30,
+        "rare": 8,
+        "legendary": 2,
+        "mythic": 0
+      }
     },
     {
       "id": 2,
       "name": "Premium Pack",
       "price": 250,
-      "description": "Contains better items!"
+      "description": "Contains better items!",
+      "rarities": {
+        "common": 40,
+        "uncommon": 35,
+        "rare": 15,
+        "legendary": 8,
+        "mythic": 2
+      }
     },
     {
       "id": 3,
       "name": "Ultimate Pack",
       "price": 500,
-      "description": "The best pack available!"
+      "description": "The best pack available!",
+      "rarities": {
+        "common": 20,
+        "uncommon": 30,
+        "rare": 25,
+        "legendary": 20,
+        "mythic": 5
+      }
     }
   ]
 }
