@@ -64,14 +64,28 @@ client.on("interactionCreate", async (interaction) => {
     }
   } else if (interaction.isButton()) {
     if (interaction.customId.startsWith('inventory_')) {
-      const [_, action, page] = interaction.customId.split('_');
+      const parts = interaction.customId.split('_');
       const inventoryCommand = client.commands.get('inventory');
       
       if (inventoryCommand) {
-        // Create a fake interaction object with the page option
+        // Handle both old and new button formats
+        let type, page;
+        
+        if (parts.length === 3) {
+          // Old format: inventory_[action]_[page]
+          type = "packs"; // Default to packs for backward compatibility
+          page = parts[2];
+        } else {
+          // New format: inventory_[type]_[action]_[page]
+          type = parts[1];
+          page = parts[3];
+        }
+        
+        // Create a fake interaction object with the options
         const fakeInteraction = {
           ...interaction,
           options: {
+            getString: () => type,
             getInteger: () => parseInt(page)
           },
           user: interaction.user
@@ -88,6 +102,19 @@ client.on("interactionCreate", async (interaction) => {
 client.once('ready', () => {
     console.log(`Ready! Logged in as ${client.user.tag}`);
     console.log('Available commands:', Array.from(client.commands.keys()));
+    
+    // Ensure data directories exist
+    const dataDir = path.join(__dirname, 'data');
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir);
+    }
+    
+    // Initialize inventory file if it doesn't exist
+    const inventoryFile = path.join(dataDir, 'userInventories.json');
+    if (!fs.existsSync(inventoryFile)) {
+      fs.writeFileSync(inventoryFile, '{}');
+    }
+    
 });
 
 client.login(process.env.TOKEN).catch(console.error);
