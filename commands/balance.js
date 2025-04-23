@@ -1,26 +1,5 @@
-@@ -0,0 +1,58 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataPath = path.join(__dirname, '../data/userBalances.json');
-
-async function ensureDataFile() {
-  try {
-    await fs.access(dataPath);
-  } catch {
-    await fs.mkdir(path.dirname(dataPath), { recursive: true });
-    await fs.writeFile(dataPath, '{}');
-  }
-}
-
-async function getBalance(userId) {
-  await ensureDataFile();
-  const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
-  return data[userId] || 100;
-}
+import { getBalance } from "../firebase.js";
 
 function formatStars(number) {
   if (number < 1000) return number.toString();
