@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "name": "Kupidcat",
+    "stats": {
+      "OFF": 76,
+      "DEF": 87,
+      "ABL": 60,
+      "MCH": 82
+    },
+    "rarity": "rare",
+    "availableTypes": "all"
+  },
+  {
+    "id": 2,
+    "name": "Dragonpup",
+    "stats": {
+      "OFF": 92,
+      "DEF": 65,
+      "ABL": 78,
+      "MCH": 70
+    },
+    "rarity": "legendary",
+    "availableTypes": "all"
+  },
+  {
+    "id": 3,
+    "name": "Foxblade",
+    "stats": {
+      "OFF": 85,
+      "DEF": 75,
+      "ABL": 90,
+      "MCH": 65
+    },
+    "rarity": "mythic",
+    "availableTypes": "all"
+  },
+  {
+    "id": 4,
+    "name": "Bunnyforce",
+    "stats": {
+      "OFF": 70,
+      "DEF": 80,
+      "ABL": 65,
+      "MCH": 75
+    },
+    "rarity": "uncommon",
+    "availableTypes": "all"
+  },
+  {
+    "id": 5,
+    "name": "Turtlesteel",
+    "stats": {
+      "OFF": 60,
+      "DEF": 95,
+      "ABL": 55,
+      "MCH": 60
+    },
+    "rarity": "common",
+    "availableTypes": "all"
+  }
+]
