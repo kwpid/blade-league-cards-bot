@@ -1,0 +1,23 @@
+
+{
+  "packs": [
+    {
+      "id": 1,
+      "name": "Starter Pack",
+      "price": 100,
+      "description": "A basic pack to get you started!"
+    },
+    {
+      "id": 2,
+      "name": "Premium Pack",
+      "price": 250,
+      "description": "Contains better items!"
+    },
+    {
+      "id": 3,
+      "name": "Ultimate Pack",
+      "price": 500,
+      "description": "The best pack available!"
+    }
+  ]
+}
