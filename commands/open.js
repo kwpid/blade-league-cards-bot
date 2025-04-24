@@ -1,5 +1,8 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';  // Added EmbedBuilder
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { cardsData, shopData } from '../index.js';
+
+// Configuration - easily change how many cards per pack
+const CARDS_PER_PACK = 1;
 
 export default {
   data: new SlashCommandBuilder()
@@ -25,7 +28,7 @@ export default {
     if (packRes.rows.length === 0) {
       return interaction.reply({
         content: "❌ You don't have an unopened pack with that ID!",
-        ephemeral: true
+        flags: "Ephemeral"
       });
     }
 
@@ -37,9 +40,9 @@ export default {
       [pack.id]
     );
 
-    // Generate cards (simplified example)
+    // Generate cards
     const cardsToAdd = [];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < CARDS_PER_PACK; i++) {
       const randomCard = cardsData[Math.floor(Math.random() * cardsData.length)];
       cardsToAdd.push({
         ...randomCard,
@@ -64,17 +67,30 @@ export default {
       );
     }
 
-    // Show opened cards
+    // Create clean embed
     const embed = new EmbedBuilder()
-      .setTitle(`🎉 You opened ${pack.pack_name}!`)
-      .setDescription(`You received ${cardsToAdd.length} cards!`);
+      .setColor(0x0099FF)
+      .setTitle(`🎁 ${pack.pack_name} - Opened!`)
+      .setDescription(`You received ${CARDS_PER_PACK} card${CARDS_PER_PACK > 1 ? 's' : ''}!`)
+      .setThumbnail('https://i.imgur.com/r3JYj4x.png') // Replace with your pack image
+      .setTimestamp();
     
-    cardsToAdd.forEach(card => {
+    // Add card fields with better formatting
+    cardsToAdd.forEach((card, index) => {
       embed.addFields({
-        name: `${card.name} (${card.rarity})`,
-        value: `OFF: ${card.stats.OFF} | DEF: ${card.stats.DEF} | Value: ${card.value} stars`
+        name: `#${index + 1} ${card.name}`,
+        value: [
+          `✨ **Rarity:** ${card.rarity.toUpperCase()}`,
+          `⭐ **Value:** ${card.value} stars`,
+          `⚔️ OFF: ${card.stats.OFF} | 🛡️ DEF: ${card.stats.DEF}`,
+          `🎯 ABL: ${card.stats.ABL} | 🤖 MCH: ${card.stats.MCH}`
+        ].join('\n'),
+        inline: true
       });
     });
+
+    // Add footer with pack ID
+    embed.setFooter({ text: `Pack ID: ${pack.id}` });
 
     await interaction.reply({ embeds: [embed] });
   }
