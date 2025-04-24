@@ -9,8 +9,8 @@ import 'dotenv/config';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// 2. Load data files - FIXED SYNTAX HERE
-const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8');
+// 2. Load data files - PROPERLY CLOSED PARENTHESES NOW
+const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
 const cardsData = loadJSON('data/cards.json');
 const shopData = loadJSON('data/shopItems.json');
 
