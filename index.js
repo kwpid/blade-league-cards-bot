@@ -101,39 +101,38 @@ async function startBot() {
       console.log(`Health check server running on port ${PORT}`);
     });
 
-    // Client event handlers
     client.on("interactionCreate", async (interaction) => {
-      if (!interaction.isChatInputCommand()) {
-        if (interaction.isButton()) {
-          return handleButtonInteraction(interaction);
-        }
-        return;
-      }
+  if (!interaction.isChatInputCommand()) {
+    if (interaction.isButton()) {
+      return handleButtonInteraction(interaction);
+    }
+    return;
+  }
 
-      const command = client.commands.get(interaction.commandName);
-      if (!command) return;
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
 
-      try {
-        await interaction.deferReply({ ephemeral: true });
-        await Promise.race([
-          command.execute(interaction, pool),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Command timeout')), 10000)
-          )
-        ]);
-      } catch (error) {
-        console.error(`Error executing ${interaction.commandName}:`, error);
-        const content = error.message.includes('timeout') 
-          ? "⌛ Command timed out. Please try again."
-          : "❌ An error occurred while executing this command!";
-        
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ content });
-        } else {
-          await interaction.reply({ content, ephemeral: true });
-        }
+  try {
+    // Defer the reply first to avoid timeout
+    await interaction.deferReply();
+    
+    // Then execute the command
+    await command.execute(interaction, pool);
+  } catch (error) {
+    console.error(`Error executing ${interaction.commandName}:`, error);
+    
+    try {
+      const content = "❌ An error occurred while executing this command!";
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content });
+      } else {
+        await interaction.reply({ content });
       }
-    });
+    } catch (err) {
+      console.error('Failed to send error message:', err);
+    }
+  }
+});
 
     client.once('ready', async () => {
       console.log(`Ready! Logged in as ${client.user.tag}`);
