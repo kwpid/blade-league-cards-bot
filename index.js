@@ -115,6 +115,22 @@ async function loadCommands() {
   }
   return commands;
 }
+async function registerCommands(commands) {
+  const commandsArray = Object.values(commands).map(cmd => cmd.data.toJSON());
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🧪 Dev Mode: Registering test server commands only...');
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, TEST_GUILD_ID),
+      { body: commandsArray }
+    );
+  } else {
+    console.log('🚀 Prod Mode: Registering global commands...');
+    await rest.put(
+      Routes.applicationCommands(CLIENT_ID),
+      { body: commandsArray }
+    );
+  }
+}
 
 // Main bot function
 async function startBot() {
@@ -152,7 +168,7 @@ async function startBot() {
         }
       }
     });
-
+    await registerCommands(commands);
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
   } catch (error) {
