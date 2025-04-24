@@ -61,5 +61,9 @@ async function start() {
   await initDB();
   await client.login(process.env.TOKEN);
 }
-
+export { 
+  pool,
+  cardsData,
+  shopData 
+};
 start().catch(console.error);
