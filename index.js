@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Client, GatewayIntentBits } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder, REST, Routes } from 'discord.js';
 import { Pool } from 'pg';
 import 'dotenv/config';
 
@@ -22,7 +22,36 @@ const pool = new Pool({
   idleTimeoutMillis: 30000
 });
 
-// Command loader
+// Initialize database and test mode table
+async function initDB() {
+  const client = await pool.connect();
+  try {
+    await client.query('SELECT NOW()');
+    console.log('Database connection successful');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS bot_settings (
+        setting_key TEXT PRIMARY KEY,
+        setting_value TEXT NOT NULL
+      )
+    `);
+
+    // Ensure test_mode is initialized
+    const res = await client.query(`SELECT * FROM bot_settings WHERE setting_key = 'test_mode'`);
+    if (res.rowCount === 0) {
+      await client.query(`INSERT INTO bot_settings (setting_key, setting_value) VALUES ('test_mode', 'false')`);
+    }
+
+    console.log('Database tables verified');
+  } catch (err) {
+    console.error('Error initializing database:', err);
+    process.exit(1);
+  } finally {
+    client.release();
+  }
+}
+
+// Load slash commands
 async function loadCommands() {
   const commands = {};
   const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
@@ -42,100 +71,50 @@ async function loadCommands() {
   return commands;
 }
 
-// Main bot function
+// Register slash commands per guild (instant sync)
+async function registerCommands(commands) {
+  const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
+  const commandArray = Object.values(commands).map(cmd => cmd.data.toJSON());
+
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+      { body: commandArray }
+    );
+    console.log('Slash commands registered (guild)');
+  } catch (err) {
+    console.error('Failed to register slash commands:', err);
+  }
+}
+
+// Main bot logic
 async function startBot() {
   try {
     console.log('Starting bot initialization...');
+    await initDB();
 
-    // Check DB connection and ensure required tables
-    const db = await pool.connect();
-    try {
-      await db.query('SELECT NOW()');
-      console.log('Database connection successful');
-
-      // Ensure tables exist
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS user_balances (
-          user_id VARCHAR(20) PRIMARY KEY,
-          balance INTEGER NOT NULL DEFAULT 100,
-          last_updated TIMESTAMP DEFAULT NOW()
-        )
-      `);
-
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS user_packs (
-          id SERIAL PRIMARY KEY,
-          user_id VARCHAR(20) NOT NULL,
-          pack_id INTEGER NOT NULL,
-          pack_name VARCHAR(100) NOT NULL,
-          pack_description TEXT,
-          pack_price INTEGER,
-          purchase_date TIMESTAMP DEFAULT NOW(),
-          opened BOOLEAN DEFAULT FALSE,
-          FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
-        )
-      `);
-
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS user_cards (
-          id SERIAL PRIMARY KEY,
-          user_id VARCHAR(20) NOT NULL,
-          card_id INTEGER NOT NULL,
-          card_name VARCHAR(100) NOT NULL,
-          rarity VARCHAR(20) NOT NULL,
-          variant VARCHAR(20) DEFAULT 'normal',
-          stats_off INTEGER NOT NULL,
-          stats_def INTEGER NOT NULL,
-          stats_abl INTEGER NOT NULL,
-          stats_mch INTEGER NOT NULL,
-          value INTEGER NOT NULL,
-          obtained_date TIMESTAMP DEFAULT NOW(),
-          FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
-        )
-      `);
-
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS bot_settings (
-          id SERIAL PRIMARY KEY,
-          test_mode BOOLEAN DEFAULT FALSE
-        )
-      `);
-
-      await db.query(`
-        INSERT INTO bot_settings (test_mode)
-        SELECT FALSE
-        WHERE NOT EXISTS (SELECT 1 FROM bot_settings)
-      `);
-
-      console.log('Database tables verified');
-    } finally {
-      db.release();
-    }
-
-    // Load commands
     const commands = await loadCommands();
+    await registerCommands(commands);
 
-    // Client events
     client.once('ready', () => {
       console.log(`Logged in as ${client.user.tag}`);
     });
 
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
-
       const command = commands[interaction.commandName];
       if (!command) return;
 
       try {
-        // Get test mode state
-        const { rows } = await pool.query(`SELECT test_mode FROM bot_settings LIMIT 1`);
-        const testMode = rows[0]?.test_mode;
-        const isAdmin = interaction.memberPermissions?.has('Administrator');
+        const isAdmin = interaction.member.permissions.has('Administrator');
 
-        // Block commands if test mode is on and user isn't admin
+        // Check test mode status
+        const result = await pool.query(`SELECT setting_value FROM bot_settings WHERE setting_key = 'test_mode'`);
+        const testMode = result.rows[0]?.setting_value === 'true';
+
         if (testMode && !isAdmin && interaction.commandName !== 'testmode') {
-          return interaction.reply({
-            content: '🛠️ The bot is currently in test mode. Only admins can use commands.',
+          return await interaction.reply({
+            content: '🚫 The bot is currently in test mode. Only admins can use commands.',
             ephemeral: true
           });
         }
@@ -151,18 +130,15 @@ async function startBot() {
       }
     });
 
-    // Start client
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
-
   } catch (error) {
-    console.error('Fatal error during bot startup:', error);
+    console.error('Fatal error during startup:', error);
     process.exit(1);
   }
 }
 
-// Start the bot
 startBot();
 
-// Export for commands to use
+// Export for commands
 export { pool, cardsData, shopData };
