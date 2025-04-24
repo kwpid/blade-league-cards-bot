@@ -152,7 +152,7 @@ async function startBot() {
         }
       }
     });
-
+    console.log(`🧪 Dev Mode is ${config.devMode ? 'ENABLED (Admin-only)' : 'DISABLED (Public)'}`);
     // Login
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
