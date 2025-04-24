@@ -4,8 +4,7 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  StringSelectMenuBuilder,
-  InteractionType
+  StringSelectMenuBuilder
 } from 'discord.js';
 
 const ITEMS_PER_PAGE = 9;
@@ -43,45 +42,50 @@ export default {
         .setDescription('Page number')
         .setMinValue(1)),
 
-  async execute(interaction, pool) {
-  // Handle button or select menu interactions
-  if (interaction.isButton()) {
-    return this.handleButtonInteraction(interaction, pool);
-  }
+  async execute(interaction, pool, { cardsData, shopData }) {
+    // Handle button or select menu interactions
+    if (interaction.isButton() || interaction.isStringSelectMenu()) {
+      return this.handleButtonInteraction(interaction, pool);
+    }
 
-  if (interaction.isStringSelectMenu()) {
-    return this.handleSelectMenuInteraction(interaction, pool);
-  }
+    // Handle slash command
+    const type = interaction.options.getString('type') || 'cards';
+    const rarityFilter = interaction.options.getString('rarity');
+    const page = interaction.options.getInteger('page') || 1;
 
-  // Handle slash command
-  const type = interaction.options.getString('type') || 'cards';
-  const rarityFilter = interaction.options.getString('rarity');
-  const page = interaction.options.getInteger('page') || 1;
-
-  await this.showInventory(interaction, pool, type, rarityFilter, page);
-},
-
-  async handleButtonInteraction(interaction, pool) {
-    const [_, type, rarityFilter, page] = interaction.customId.split('_');
-    await this.showInventory(
-      interaction, 
-      pool, 
-      type, 
-      rarityFilter === 'all' ? null : rarityFilter, 
-      parseInt(page)
-    );
+    await this.showInventory(interaction, pool, type, rarityFilter, page);
   },
 
-  async handleSelectMenuInteraction(interaction, pool) {
-    const [_, __, type, currentPage] = interaction.customId.split('_');
-    const rarityFilter = interaction.values[0];
-    await this.showInventory(
-      interaction,
-      pool,
-      type,
-      rarityFilter === 'all' ? null : rarityFilter,
-      parseInt(currentPage)
-    );
+  async handleButtonInteraction(interaction, pool) {
+    try {
+      // Defer the interaction first to prevent timeout
+      await interaction.deferUpdate();
+      
+      let type, rarityFilter, page;
+      
+      if (interaction.isStringSelectMenu()) {
+        // Handle select menu interaction
+        const [_, __, interactionType, currentPage] = interaction.customId.split('_');
+        type = interactionType;
+        rarityFilter = interaction.values[0] === 'all' ? null : interaction.values[0];
+        page = parseInt(currentPage);
+      } else {
+        // Handle button interaction
+        const [_, interactionType, interactionRarityFilter, interactionPage] = interaction.customId.split('_');
+        type = interactionType;
+        rarityFilter = interactionRarityFilter === 'all' ? null : interactionRarityFilter;
+        page = parseInt(interactionPage);
+      }
+
+      await this.showInventory(interaction, pool, type, rarityFilter, page);
+    } catch (error) {
+      console.error('Error handling button interaction:', error);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: '❌ Failed to update inventory', flags: 1 << 6 });
+      } else {
+        await interaction.reply({ content: '❌ Failed to update inventory', flags: 1 << 6, ephemeral: true });
+      }
+    }
   },
 
   async showInventory(interaction, pool, type, rarityFilter, page) {
