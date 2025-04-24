@@ -5,18 +5,17 @@ import { shopData } from "../index.js";
 export default {
   data: new SlashCommandBuilder()
     .setName("purchase")
-    .setDescription("Purchase an item from the shop")
+    .setDescription("Purchase a pack from the shop")
     .addStringOption(option =>
       option.setName("type")
-        .setDescription("The type of item to purchase")
+        .setDescription("The type of item to purchase (only 'pack' is valid)")
         .setRequired(true)
         .addChoices(
-          { name: "pack", value: "pack" },
-          { name: "limited", value: "limited" }
+          { name: "pack", value: "pack" }
         ))
     .addIntegerOption(option =>
       option.setName("id")
-        .setDescription("The ID of the item to purchase")
+        .setDescription("The ID of the pack to purchase")
         .setRequired(true)
         .setMinValue(1)),
 
@@ -24,15 +23,25 @@ export default {
     const type = interaction.options.getString("type");
     const id = interaction.options.getInteger("id");
 
-    const itemList = type === "limited" ? shopData.limited : shopData.packs;
-    const item = itemList.find(p => p.id === id);
-
-    if (!item) {
-      return interaction.reply({ 
-        content: `❌ Invalid ${type} ID! Use /shop to see available ${type}s.`,
+    if (type !== "pack") {
+      return interaction.reply({
+        content: `❌ Invalid type! Only 'pack' is supported.`,
         flags: MessageFlags.Ephemeral
       });
     }
+
+    // Merge normal + limited packs
+    const allPacks = [...shopData.packs, ...shopData.limited];
+    const item = allPacks.find(p => p.id === id);
+
+    if (!item) {
+      return interaction.reply({
+        content: `❌ Invalid pack ID! Use /shop to view available packs.`,
+        flags: MessageFlags.Ephemeral
+      });
+    }
+
+    const isLimited = shopData.limited.some(p => p.id === item.id);
 
     const client = await pool.connect();
     try {
@@ -68,13 +77,13 @@ export default {
       await client.query(
         `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price, is_limited)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [interaction.user.id, item.id, item.name, item.description, item.price, type === "limited"]
+        [interaction.user.id, item.id, item.name, item.description, item.price, isLimited]
       );
 
       await client.query('COMMIT');
 
       await interaction.reply({
-        content: `✅ Successfully purchased **${item.name}** for ⭐ ${item.price} stars!\nYour new balance is ⭐ ${currentBalance - item.price} stars.`,
+        content: `✅ Purchased **${item.name}** for ⭐ ${item.price} stars!\nYour new balance is ⭐ ${currentBalance - item.price} stars.`,
         flags: MessageFlags.Ephemeral
       });
     } catch (error) {
