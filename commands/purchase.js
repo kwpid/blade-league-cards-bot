@@ -1,4 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
+import { MessageFlags } from "discord-api-types/v10"; // Importing MessageFlags
 import { shopData } from "../index.js";
 
 export default {
@@ -26,7 +27,7 @@ export default {
       if (!pack) {
         return interaction.reply({ 
           content: "❌ Invalid pack ID! Use /shop to see available packs.", 
-          flags: "Ephemeral"
+          flags: MessageFlags.Ephemeral
         });
       }
 
@@ -34,7 +35,6 @@ export default {
       try {
         await client.query('BEGIN');
         
-        // Get or create balance with FOR UPDATE lock
         const { rows } = await client.query(
           `INSERT INTO user_balances (user_id, balance)
            VALUES ($1, 100)
@@ -49,13 +49,12 @@ export default {
         if (currentBalance < pack.price) {
           await interaction.reply({ 
             content: `❌ You don't have enough stars! You need ${pack.price} stars but have ${currentBalance} stars.`, 
-            flags: "Ephemeral"
+            flags: MessageFlags.Ephemeral
           });
           await client.query('ROLLBACK');
           return;
         }
 
-        // Deduct stars
         await client.query(
           `UPDATE user_balances 
            SET balance = balance - $1
@@ -63,7 +62,6 @@ export default {
           [pack.price, interaction.user.id]
         );
         
-        // Add pack to inventory
         await client.query(
           `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price)
            VALUES ($1, $2, $3, $4, $5)`,
@@ -74,14 +72,14 @@ export default {
         
         await interaction.reply({
           content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${currentBalance - pack.price} stars.`,
-          flags: "Ephemeral"
+          flags: MessageFlags.Ephemeral
         });
       } catch (error) {
         await client.query('ROLLBACK');
         console.error('Purchase error:', error);
         await interaction.followUp({
           content: "❌ An error occurred during purchase. Please try again.",
-          flags: "Ephemeral"
+          flags: MessageFlags.Ephemeral
         });
       } finally {
         client.release();
