@@ -98,7 +98,7 @@ export default {
 
 // Calculate total stats and a bonus (e.g., 0.6 stars per stat point)
 const totalStats = randomCard.stats.OFF + randomCard.stats.DEF + randomCard.stats.ABL + randomCard.stats.MCH;
-const statBonus = Math.floor(totalStats * 0.6); 
+const statBonus = Math.floor(totalStats * 0.3); 
 
 cardsToAdd.push({
   ...randomCard,
