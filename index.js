@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder, REST, Routes } from 'discord.js';
 import { Pool } from 'pg';
 import 'dotenv/config';
 
@@ -141,7 +141,7 @@ async function registerCommands(commands) {
   }
 }
 
-// Verify and update database structure if needed
+// Verify database structure
 async function verifyDatabaseStructure() {
   const client = await pool.connect();
   try {
@@ -181,51 +181,122 @@ async function startBot() {
     });
 
     client.on('interactionCreate', async interaction => {
-      if (!interaction.isCommand()) return;
-
-      // Admin-only debug command
-      if (interaction.commandName === 'debug-refresh') {
-        if (!interaction.memberPermissions.has('Administrator')) {
-          return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
+      if (interaction.isCommand()) {
+        // Debug commands
+        if (interaction.commandName === 'debug-refresh') {
+          if (!interaction.memberPermissions.has('Administrator')) {
+            return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
+          }
+          try {
+            await registerCommands(commands);
+            await verifyDatabaseStructure();
+            return interaction.reply({ 
+              content: '✅ Commands refreshed and database verified!', 
+              ephemeral: true 
+            });
+          } catch (error) {
+            console.error('Debug refresh failed:', error);
+            return interaction.reply({ 
+              content: `❌ Failed to refresh: ${error.message}`, 
+              ephemeral: true 
+            });
+          }
         }
+
+        // Normal command handling
+        const command = commands[interaction.commandName];
+        if (!command) return;
+
+        if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
+          return interaction.reply({
+            content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
+            ephemeral: true
+          });
+        }
+
         try {
-          await registerCommands(commands);
-          await verifyDatabaseStructure();
-          return interaction.reply({ 
-            content: '✅ Commands refreshed and database verified!', 
-            ephemeral: true 
-          });
+          await command.execute(interaction, pool, { cardsData, shopData });
         } catch (error) {
-          console.error('Debug refresh failed:', error);
-          return interaction.reply({ 
-            content: `❌ Failed to refresh: ${error.message}`, 
-            ephemeral: true 
-          });
+          console.error(`Error executing ${interaction.commandName}:`, error);
+          const errorMessage = error.code === '42703' 
+            ? "❌ Database needs update! Use `/debug-refresh` as admin to fix."
+            : '❌ Command failed';
+          
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: errorMessage, ephemeral: true });
+          } else {
+            await interaction.reply({ content: errorMessage, ephemeral: true });
+          }
         }
-      }
+      } else if (interaction.isButton() || interaction.isStringSelectMenu()) {
+        // Handle button and select menu interactions
+        try {
+          if (interaction.customId.startsWith('inv_')) {
+            // Handle inventory pagination
+            const [_, type, rarityFilter, page] = interaction.customId.split('_');
+            const inventoryCommand = commands['inventory'];
+            
+            if (!inventoryCommand) {
+              throw new Error('Inventory command not found');
+            }
 
-      const command = commands[interaction.commandName];
-      if (!command) return;
+            // Create options for the inventory command
+            const options = {
+              getString: (name) => {
+                if (name === 'type') return type;
+                if (name === 'rarity') return rarityFilter === 'all' ? null : rarityFilter;
+                return null;
+              },
+              getInteger: (name) => {
+                if (name === 'page') return parseInt(page);
+                return null;
+              }
+            };
 
-      if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
-        return interaction.reply({
-          content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
-          ephemeral: true
-        });
-      }
+            await inventoryCommand.execute({
+              ...interaction,
+              options,
+              user: interaction.user
+            }, pool, { cardsData, shopData });
+            
+            await interaction.deferUpdate();
+          } else if (interaction.customId === 'inventory_filter') {
+            // Handle rarity filter selection
+            const type = interaction.message.embeds[0].title.includes('Packs') ? 'packs' : 'cards';
+            const inventoryCommand = commands['inventory'];
+            
+            if (!inventoryCommand) {
+              throw new Error('Inventory command not found');
+            }
 
-      try {
-        await command.execute(interaction, pool, { cardsData, shopData });
-      } catch (error) {
-        console.error(`Error executing ${interaction.commandName}:`, error);
-        const errorMessage = error.code === '42703' 
-          ? "❌ Database needs update! Use `/debug-refresh` as admin to fix."
-          : '❌ Command failed';
-        
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ content: errorMessage, ephemeral: true });
-        } else {
-          await interaction.reply({ content: errorMessage, ephemeral: true });
+            // Create options for the inventory command
+            const options = {
+              getString: (name) => {
+                if (name === 'type') return type;
+                if (name === 'rarity') return interaction.values[0] === 'all' ? null : interaction.values[0];
+                return null;
+              },
+              getInteger: (name) => {
+                if (name === 'page') return 1;
+                return null;
+              }
+            };
+
+            await inventoryCommand.execute({
+              ...interaction,
+              options,
+              user: interaction.user
+            }, pool, { cardsData, shopData });
+            
+            await interaction.deferUpdate();
+          }
+        } catch (error) {
+          console.error('Error handling button interaction:', error);
+          if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({ content: '❌ Interaction failed', ephemeral: true });
+          } else {
+            await interaction.reply({ content: '❌ Interaction failed', ephemeral: true });
+          }
         }
       }
     });
@@ -234,6 +305,7 @@ async function startBot() {
     await verifyDatabaseStructure();
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
+
   } catch (error) {
     console.error('Fatal error during bot startup:', error);
     process.exit(1);
