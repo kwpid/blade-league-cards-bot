@@ -13,8 +13,9 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
 const cardsData = loadJSON('data/cards.json');
 const shopData = loadJSON('data/shopItems.json');
+const config = loadJSON('config.json'); // Load config
 
-// Database setup with enhanced connection handling
+// Database setup
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -29,7 +30,6 @@ async function initDB() {
     try {
       const client = await pool.connect();
       try {
-        // Test connection
         await client.query('SELECT NOW()');
         console.log('Database connection successful');
 
@@ -41,7 +41,7 @@ async function initDB() {
             last_updated TIMESTAMP DEFAULT NOW()
           )
         `);
-        
+
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_packs (
             id SERIAL PRIMARY KEY,
@@ -55,7 +55,7 @@ async function initDB() {
             FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
           )
         `);
-        
+
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_cards (
             id SERIAL PRIMARY KEY,
@@ -73,7 +73,7 @@ async function initDB() {
             FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
           )
         `);
-        
+
         console.log('Database tables verified');
         return;
       } finally {
@@ -114,21 +114,30 @@ async function loadCommands() {
 async function startBot() {
   try {
     console.log('Starting bot initialization...');
-    
-    // Initialize database first
+
+    // Initialize database
     await initDB();
-    
+
     // Load commands
     const commands = await loadCommands();
-    
-    // Client events
+
+    // Client ready event
     client.once('ready', () => {
       console.log(`Logged in as ${client.user.tag}`);
     });
 
+    // Command handler
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
-      
+
+      // Dev Mode check
+      if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
+        return interaction.reply({
+          content: '🚧 Bot is in Dev Mode. Commands are currently admin-only.',
+          ephemeral: true
+        });
+      }
+
       const command = commands[interaction.commandName];
       if (!command) return;
 
@@ -144,18 +153,17 @@ async function startBot() {
       }
     });
 
-    // Start client
+    // Login
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
-
   } catch (error) {
     console.error('Fatal error during bot startup:', error);
     process.exit(1);
   }
 }
 
-// Start the bot
+// Start
 startBot();
 
-// Export for commands to use
+// Export
 export { pool, cardsData, shopData };
