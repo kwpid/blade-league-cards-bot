@@ -1,5 +1,5 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { shopData } from '../index.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } from 'discord.js';
+import { shopData, calculatePackPrice } from '../index.js';
 
 const ITEMS_PER_PAGE = 6;
 const LIMITED_PACK_IDS = [101]; // Add IDs of packs that should be limited here
@@ -13,18 +13,25 @@ export default {
         .setDescription('Page number')
         .setMinValue(1)),
 
-  async execute(interaction) {
+  async execute(interaction, pool, { shopData, calculatePackPrice }) {
     const currentPage = interaction.options.getInteger('page') || 1;
     
-    // Separate packs into regular and limited
-    const regularPacks = (shopData.packs || []).filter(pack => !LIMITED_PACK_IDS.includes(pack.id));
-    const limitedPacks = (shopData.packs || []).filter(pack => LIMITED_PACK_IDS.includes(pack.id));
+    // Calculate dynamic prices for all packs
+    const packsWithPrices = shopData.packs.map(pack => ({
+      ...pack,
+      price: calculatePackPrice(pack, shopData.cards)
+    }));
+
+    // Separate into regular and limited packs
+    const regularPacks = packsWithPrices.filter(pack => !LIMITED_PACK_IDS.includes(pack.id));
+    const limitedPacks = packsWithPrices.filter(pack => LIMITED_PACK_IDS.includes(pack.id));
 
     // Create embed
     const embed = new EmbedBuilder()
       .setColor(0x00AE86)
       .setTitle('🛒 Card Pack Shop')
-      .setThumbnail('https://i.imgur.com/J8qTf7i.png');
+      .setThumbnail('https://i.imgur.com/J8qTf7i.png')
+      .setFooter({ text: `ROI: ${(shopData.roiPercentage * 100).toFixed(0)}% • Prices update dynamically` });
 
     // Add limited packs section if any exist
     if (limitedPacks.length > 0) {
@@ -40,13 +47,18 @@ export default {
           value: [
             `💰 **Price:** ⭐ ${pack.price}`,
             `${pack.description || 'No description provided.'}`,
+            `🎚️ **Rarities:** ${Object.entries(pack.rarities)
+              .map(([rarity, chance]) => `${rarity}: ${chance}%`)
+              .join(', ')}`,
             `\`/purchase pack id:${pack.id}\``
           ].join('\n'),
           inline: true
         });
       });
 
-      embed.addFields({ name: '\u200B', value: 'Regular Packs', inline: false });
+      if (regularPacks.length > 0) {
+        embed.addFields({ name: '\u200B', value: 'Regular Packs', inline: false });
+      }
     }
 
     // Handle pagination for regular packs
@@ -62,18 +74,46 @@ export default {
         value: [
           `💰 **Price:** ⭐ ${pack.price}`,
           `${pack.description || 'No description provided.'}`,
+          `🎚️ **Rarities:** ${Object.entries(pack.rarities)
+            .map(([rarity, chance]) => `${rarity}: ${chance}%`)
+            .join(', ')}`,
           `\`/purchase pack id:${pack.id}\``
         ].join('\n'),
         inline: true
       });
     });
 
-    embed.setDescription(`Page ${page}/${totalPages} • ${regularPacks.length} regular pack${regularPacks.length !== 1 ? 's' : ''} available` +
-      (limitedPacks.length > 0 ? ` • ${limitedPacks.length} limited pack${limitedPacks.length !== 1 ? 's' : ''}` : ''));
+    embed.setDescription(
+      `Page ${page}/${totalPages} • ${regularPacks.length} regular pack${regularPacks.length !== 1 ? 's' : ''} available` +
+      (limitedPacks.length > 0 ? ` • ${limitedPacks.length} limited pack${limitedPacks.length !== 1 ? 's' : ''}` : '')
+    );
 
-    await interaction.reply({
-      embeds: [embed],
-      ephemeral: true
-    });
+    // Add rarity filter dropdown if viewing page 1
+    if (page === 1) {
+      const row = new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder()
+          .setCustomId('shop_rarity_filter')
+          .setPlaceholder('Filter by Rarity')
+          .addOptions([
+            { label: 'All Rarities', value: 'all' },
+            { label: 'Common', value: 'common' },
+            { label: 'Uncommon', value: 'uncommon' },
+            { label: 'Rare', value: 'rare' },
+            { label: 'Legendary', value: 'legendary' },
+            { label: 'Mythic', value: 'mythic' }
+          ])
+      );
+      
+      await interaction.reply({
+        embeds: [embed],
+        components: [row],
+        ephemeral: false
+      });
+    } else {
+      await interaction.reply({
+        embeds: [embed],
+        ephemeral: false
+      });
+    }
   }
 };

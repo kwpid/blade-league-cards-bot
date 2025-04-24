@@ -1,3 +1,4 @@
 {
-  "devMode": true
+  "devMode": true,
+  "roiPercentage": 0.3
 }
