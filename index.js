@@ -5,32 +5,30 @@ import { Client, GatewayIntentBits } from 'discord.js';
 import { Pool } from 'pg';
 import 'dotenv/config';
 
-// Basic setup
+// 1. Basic setup
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Load data files
-const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8');
-const shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
+// 2. Load data files - FIXED SYNTAX HERE
+const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8');
+const cardsData = loadJSON('data/cards.json');
+const shopData = loadJSON('data/shopItems.json');
 
-// Database connection
+// 3. Database setup
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
-// Initialize database tables
+// 4. Initialize database
 async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS user_balances (
+  const tables = [
+    `CREATE TABLE IF NOT EXISTS user_balances (
       user_id VARCHAR(20) PRIMARY KEY,
       balance INTEGER NOT NULL DEFAULT 100,
       last_updated TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS user_packs (
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_packs (
       id SERIAL PRIMARY KEY,
       user_id VARCHAR(20) NOT NULL,
       pack_id INTEGER NOT NULL,
@@ -40,11 +38,8 @@ async function initDB() {
       purchase_date TIMESTAMP DEFAULT NOW(),
       opened BOOLEAN DEFAULT FALSE,
       FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
-    )
-  `);
-  
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS user_cards (
+    )`,
+    `CREATE TABLE IF NOT EXISTS user_cards (
       id SERIAL PRIMARY KEY,
       user_id VARCHAR(20) NOT NULL,
       card_id INTEGER NOT NULL,
@@ -58,15 +53,20 @@ async function initDB() {
       value INTEGER NOT NULL,
       obtained_date TIMESTAMP DEFAULT NOW(),
       FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
-    )
-  `);
+    )`
+  ];
+
+  for (const table of tables) {
+    await pool.query(table);
+  }
   console.log('Database tables verified');
 }
 
-// Async function to load commands
+// 5. Command loader
 async function loadCommands() {
   const commands = {};
-  const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+  const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
+    .filter(file => file.endsWith('.js'));
 
   for (const file of commandFiles) {
     const command = (await import(`./commands/${file}`)).default;
@@ -75,7 +75,7 @@ async function loadCommands() {
   return commands;
 }
 
-// Main bot startup
+// 6. Main bot
 async function startBot() {
   try {
     const commands = await loadCommands();
@@ -87,7 +87,6 @@ async function startBot() {
 
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
-
       const command = commands[interaction.commandName];
       if (!command) return;
 
@@ -96,23 +95,18 @@ async function startBot() {
       } catch (error) {
         console.error(error);
         await interaction.reply({ 
-          content: 'There was an error executing this command!', 
+          content: '❌ Command error!', 
           ephemeral: true 
         });
       }
     });
 
     await client.login(process.env.TOKEN);
-    console.log('Bot is running!');
-
   } catch (error) {
-    console.error('Failed to start bot:', error);
+    console.error('Bot startup failed:', error);
     process.exit(1);
   }
 }
 
-// Start the bot
+// 7. Start everything
 startBot();
-
-// Export for commands to use
-export { pool, cardsData, shopData };
