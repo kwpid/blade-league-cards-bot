@@ -1,42 +1,66 @@
-const fs = require('fs');
-const path = require('path');
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
-module.exports = {
-  name: 'baltop',
-  description: 'Shows the richest players.',
-  execute(message, args) {
-    const dataPath = path.join(__dirname, '../data.json');
+export default {
+  data: new SlashCommandBuilder()
+    .setName('baltop')
+    .setDescription('Displays the top 10 richest players'),
+  
+  async execute(interaction, pool) {
+    try {
+      // Defer the reply to give more time for the database query
+      await interaction.deferReply();
 
-    // Read and parse economy data
-    let rawData = fs.readFileSync(dataPath);
-    let balances = JSON.parse(rawData);
+      // Query the database for top 10 balances
+      const client = await pool.connect();
+      try {
+        const result = await client.query(`
+          SELECT user_id, balance 
+          FROM user_balances 
+          ORDER BY balance DESC 
+          LIMIT 10
+        `);
 
-    // Sort users by balance in descending order
-    let sorted = Object.entries(balances)
-      .sort(([, aBal], [, bBal]) => bBal - aBal)
-      .slice(0, 10); // Top 10
-
-    if (sorted.length === 0) {
-      return message.channel.send('💸 No balance data found!');
-    }
-
-    // Build the leaderboard
-    let leaderboard = sorted.map(([userId, balance], index) => {
-      const user = message.client.users.cache.get(userId);
-      const username = user ? user.username : `Unknown User (${userId})`;
-      return `**${index + 1}.** ${username} — 💰 $${balance.toLocaleString()}`;
-    }).join('\n');
-
-    message.channel.send({
-      embeds: [{
-        color: 0x00ff99,
-        title: '🏆 Balance Leaderboard',
-        description: leaderboard,
-        timestamp: new Date(),
-        footer: {
-          text: 'Top 10 richest players'
+        if (result.rows.length === 0) {
+          return interaction.editReply('❌ No user balances found in the database.');
         }
-      }]
-    });
+
+        // Create the embed
+        const embed = new EmbedBuilder()
+          .setTitle('💰 Top 10 Richest Players')
+          .setColor(0xF8C471) // Gold-ish color
+          .setTimestamp()
+          .setFooter({ text: 'Economy Leaderboard' });
+
+        // Process each user and add them to the embed
+        const leaderboard = await Promise.all(result.rows.map(async (row, index) => {
+          try {
+            const user = await interaction.client.users.fetch(row.user_id);
+            return {
+              name: `${index + 1}. ${user.username}`,
+              value: `$${row.balance.toLocaleString()}`,
+              inline: false
+            };
+          } catch (error) {
+            // If user can't be fetched, show their ID instead
+            return {
+              name: `${index + 1}. User (${row.user_id})`,
+              value: `$${row.balance.toLocaleString()}`,
+              inline: false
+            };
+          }
+        }));
+
+        // Add fields to the embed
+        embed.addFields(leaderboard);
+
+        // Send the embed
+        await interaction.editReply({ embeds: [embed] });
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Error executing baltop command:', error);
+      await interaction.editReply('❌ An error occurred while fetching the leaderboard.');
+    }
   }
 };
