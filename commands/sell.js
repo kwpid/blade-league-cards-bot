@@ -24,106 +24,67 @@ export default {
 
     try {
       if (type === 'pack') {
-        // Handle pack selling
-        const packId = parseInt(idInput);
+        const packId = parseInt(idInput, 10);
         if (isNaN(packId)) {
-          return interaction.reply({
-            content: '❌ Invalid pack ID! Please provide a number.',
-            ephemeral: true
-          });
+          return interaction.reply({ content: '❌ Invalid pack ID!', ephemeral: true });
         }
 
-        // Check if user has this unopened pack
-        const packRes = await pool.query(
-          `SELECT * FROM user_packs 
-           WHERE user_id = $1 AND pack_id = $2 AND opened = false 
-           LIMIT 1`,
-          [userId, packId]
-        );
+        const packRes = await pool.query(`
+          SELECT * FROM user_packs 
+          WHERE user_id = $1 AND pack_id = $2 AND opened = false 
+          LIMIT 1
+        `, [userId, packId]);
 
-        if (packRes.rows.length === 0) {
-          return interaction.reply({
-            content: `❌ You don't have an unopened pack with ID ${packId}!`,
-            ephemeral: true
-          });
+        if (packRes.rowCount === 0) {
+          return interaction.reply({ content: `❌ No unopened pack with ID ${packId}!`, ephemeral: true });
         }
 
         const pack = packRes.rows[0];
         const sellValue = Math.floor(pack.pack_price * 0.7);
 
-        // Delete pack and update user balance
         await pool.query('BEGIN');
-        await pool.query(
-          `DELETE FROM user_packs 
-           WHERE id = $1`,
-          [pack.id]
-        );
-        await pool.query(
-          `UPDATE user_balances 
-           SET balance = balance + $1 
-           WHERE user_id = $2`,
-          [sellValue, userId]
-        );
+        await pool.query('DELETE FROM user_packs WHERE id = $1', [pack.id]);
+        await pool.query('UPDATE user_balances SET balance = balance + $1 WHERE user_id = $2', [sellValue, userId]);
         await pool.query('COMMIT');
 
         const embed = new EmbedBuilder()
-          .setColor(0x00FF00)
+          .setColor('Green')
           .setTitle('📦 Pack Sold')
-          .setDescription(`You sold **${pack.pack_name}** for **${sellValue}** stars (70% of original value)`)
+          .setDescription(`You sold **${pack.pack_name}** for **${sellValue}** stars (70% value)`)
           .addFields(
-            { name: 'Pack ID', value: pack.pack_id.toString(), inline: true },
+            { name: 'Pack ID', value: `${pack.pack_id}`, inline: true },
             { name: 'Original Value', value: `${pack.pack_price} stars`, inline: true }
           );
 
         return interaction.reply({ embeds: [embed] });
 
       } else if (type === 'card') {
-        // Handle card selling
-        const [cardId, uniqueId] = idInput.split(':').map(part => part.trim());
-        
-        if (!cardId || !uniqueId) {
-          return interaction.reply({
-            content: '❌ Invalid card ID format! Use `card_id:unique_id` (e.g., 123:001)',
-            ephemeral: true
-          });
+        const [cardId, uniqueId] = idInput.split(':').map(str => str.trim());
+        if (!cardId || !uniqueId || isNaN(cardId) || isNaN(uniqueId)) {
+          return interaction.reply({ content: '❌ Use format `card_id:unique_id`!', ephemeral: true });
         }
 
-        // Check if user has this card
-        const cardRes = await pool.query(
-          `SELECT * FROM user_cards 
-           WHERE user_id = $1 AND card_id = $2 AND id = $3`,
-          [userId, parseInt(cardId), parseInt(uniqueId)]
-        );
+        const cardRes = await pool.query(`
+          SELECT * FROM user_cards 
+          WHERE user_id = $1 AND card_id = $2 AND id = $3
+        `, [userId, parseInt(cardId), parseInt(uniqueId)]);
 
-        if (cardRes.rows.length === 0) {
-          return interaction.reply({
-            content: `❌ You don't have this card (${idInput}) in your inventory!`,
-            ephemeral: true
-          });
+        if (cardRes.rowCount === 0) {
+          return interaction.reply({ content: `❌ Card (${idInput}) not found!`, ephemeral: true });
         }
 
         const card = cardRes.rows[0];
         const sellValue = Math.floor(card.value * 0.7);
 
-        // Delete card and update user balance
         await pool.query('BEGIN');
-        await pool.query(
-          `DELETE FROM user_cards 
-           WHERE id = $1`,
-          [card.id]
-        );
-        await pool.query(
-          `UPDATE user_balances 
-           SET balance = balance + $1 
-           WHERE user_id = $2`,
-          [sellValue, userId]
-        );
+        await pool.query('DELETE FROM user_cards WHERE id = $1', [card.id]);
+        await pool.query('UPDATE user_balances SET balance = balance + $1 WHERE user_id = $2', [sellValue, userId]);
         await pool.query('COMMIT');
 
         const embed = new EmbedBuilder()
-          .setColor(0x00FF00)
+          .setColor('Green')
           .setTitle('🃏 Card Sold')
-          .setDescription(`You sold **${card.card_name}** for **${sellValue}** stars (70% of original value)`)
+          .setDescription(`You sold **${card.card_name}** for **${sellValue}** stars (70% value)`)
           .addFields(
             { name: 'Card ID', value: `${card.card_id}:${card.id.toString().padStart(3, '0')}`, inline: true },
             { name: 'Rarity', value: card.rarity, inline: true },
@@ -132,13 +93,10 @@ export default {
 
         return interaction.reply({ embeds: [embed] });
       }
-    } catch (error) {
+    } catch (err) {
+      console.error('Sell Command Error:', err);
       await pool.query('ROLLBACK');
-      console.error('Error in sell command:', error);
-      return interaction.reply({
-        content: '❌ An error occurred while processing your sale!',
-        ephemeral: true
-      });
+      return interaction.reply({ content: '❌ An error occurred during the sale!', ephemeral: true });
     }
   }
 };
