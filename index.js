@@ -9,8 +9,8 @@ import 'dotenv/config';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Load data files - FIXED THE MISSING PARENTHESES HERE
-const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8'));
+// Load data files
+const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8');
 const shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
 
 // Database connection
@@ -63,41 +63,56 @@ async function initDB() {
   console.log('Database tables verified');
 }
 
-// Load commands
-const commands = {};
-const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
+// Async function to load commands
+async function loadCommands() {
+  const commands = {};
+  const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
 
-for (const file of commandFiles) {
-  const command = (await import(`./commands/${file}`)).default;
-  commands[command.data.name] = command;
+  for (const file of commandFiles) {
+    const command = (await import(`./commands/${file}`)).default;
+    commands[command.data.name] = command;
+  }
+  return commands;
 }
 
-// Ready event
-client.once('ready', async () => {
-  console.log(`Logged in as ${client.user.tag}`);
-  await initDB();
-});
-
-// Interaction handling
-client.on('interactionCreate', async interaction => {
-  if (!interaction.isCommand()) return;
-
-  const command = commands[interaction.commandName];
-  if (!command) return;
-
+// Main bot startup
+async function startBot() {
   try {
-    await command.execute(interaction, pool, { cardsData, shopData });
-  } catch (error) {
-    console.error(error);
-    await interaction.reply({ 
-      content: 'There was an error executing this command!', 
-      ephemeral: true 
+    const commands = await loadCommands();
+    
+    client.once('ready', async () => {
+      console.log(`Logged in as ${client.user.tag}`);
+      await initDB();
     });
-  }
-});
 
-// Start bot
-client.login(process.env.TOKEN);
+    client.on('interactionCreate', async interaction => {
+      if (!interaction.isCommand()) return;
+
+      const command = commands[interaction.commandName];
+      if (!command) return;
+
+      try {
+        await command.execute(interaction, pool, { cardsData, shopData });
+      } catch (error) {
+        console.error(error);
+        await interaction.reply({ 
+          content: 'There was an error executing this command!', 
+          ephemeral: true 
+        });
+      }
+    });
+
+    await client.login(process.env.TOKEN);
+    console.log('Bot is running!');
+
+  } catch (error) {
+    console.error('Failed to start bot:', error);
+    process.exit(1);
+  }
+}
+
+// Start the bot
+startBot();
 
 // Export for commands to use
 export { pool, cardsData, shopData };
