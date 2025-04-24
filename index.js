@@ -150,19 +150,22 @@ async function loadCommands() {
       if (command?.data) {
         commands[command.data.name] = command;
         console.log(`📦 Loaded command: ${command.data.name}`);
+      } else {
+        console.warn(`⚠️ Command file "${file}" is missing "data" or improperly formatted.`);
       }
     } catch (err) {
-      console.error(`❌ Error loading command ${file}:`, err);
+      console.error(`❌ Error loading command "${file}":`, err);
     }
   }
+
+  console.log(`✅ Loaded ${Object.keys(commands).length} commands.`);
   return commands;
 }
 
 async function registerCommands(commands) {
   try {
-    console.log('🔍 Starting command registration process...');
+    console.log('🔍 Starting guild-specific command registration process...');
     
-    // Prepare commands data
     const commandsArray = Object.values(commands)
       .filter(cmd => cmd?.data)
       .map(cmd => cmd.data.toJSON());
@@ -171,17 +174,25 @@ async function registerCommands(commands) {
       throw new Error('No valid commands to register');
     }
 
-    console.log('📡 Registering guild commands...');
+    // Clear existing guild-specific commands
+    console.log('📡 Clearing existing guild-specific commands...');
+    await rest.put(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      { body: [] }
+    );
+
+    // Register new guild-specific commands
+    console.log('📡 Registering new guild-specific commands...');
     const data = await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commandsArray }
     );
-    
-    console.log(`✅ Successfully registered ${data.length} guild commands`);
+
+    console.log(`✅ Successfully registered ${data.length} guild-specific commands.`);
     console.log('📋 Registered commands:', data.map(c => c.name));
     return true;
   } catch (error) {
-    console.error('❌ Failed to register commands:', error);
+    console.error('❌ Failed to register guild-specific commands:', error);
     throw error;
   }
 }
@@ -251,20 +262,22 @@ async function startBot() {
         // Debug commands
         if (interaction.commandName === 'debug-refresh') {
           if (!interaction.memberPermissions.has('Administrator')) {
-            return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
+            return interaction.reply({ content: '❌ This command is restricted to server admins.', ephemeral: true });
           }
+
           try {
+            await interaction.deferReply({ ephemeral: true });
+
             const commands = await loadCommands();
             await registerCommands(commands);
-            await verifyDatabaseStructure();
-            return interaction.reply({ 
-              content: `✅ Successfully refreshed ${Object.keys(commands).length} commands and verified database!`, 
-              ephemeral: true 
+
+            await interaction.editReply({
+              content: `✅ Successfully refreshed commands!`,
             });
           } catch (error) {
-            return interaction.reply({ 
-              content: `❌ Failed to refresh: ${error.message}`, 
-              ephemeral: true 
+            console.error('Debug refresh failed:', error);
+            await interaction.editReply({
+              content: `❌ Failed to refresh: ${error.message}`,
             });
           }
         }
