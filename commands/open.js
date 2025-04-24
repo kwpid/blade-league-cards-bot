@@ -1,166 +1,97 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const inventoryPath = path.join(__dirname, '../data/userInventories.json');
-
-const ITEMS_PER_PAGE = 5;
-
-// Rarity colors for cards
-const RARITY_COLORS = {
-  common: 0x808080,    // Gray
-  uncommon: 0x2ecc71,  // Green
-  rare: 0x3498db,      // Blue
-  legendary: 0x9b59b6, // Purple
-  mythic: 0xf1c40f     // Gold
-};
-
-// Emoji representations for better visual distinction
-const TYPE_EMOJIS = {
-  packs: "📦",
-  cards: "🃏"
-};
-
-async function getInventory(userId) {
-  try {
-    const data = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
-    return data[userId] || { packs: [], cards: [] };
-  } catch {
-    return { packs: [], cards: [] };
-  }
-}
+import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
 
 export default {
   data: new SlashCommandBuilder()
-    .setName("inventory")
-    .setDescription("View your inventory")
-    .addStringOption(option =>
-      option.setName("type")
-        .setDescription("Type of inventory to view")
-        .setRequired(false)
-        .addChoices(
-          { name: "Packs", value: "packs" },
-          { name: "Cards", value: "cards" }
-        ))
+    .setName("open")
+    .setDescription("Open a pack from your inventory")
     .addIntegerOption(option =>
-      option.setName("page")
-        .setDescription("Page number to view")
-        .setRequired(false)
-        .setMinValue(1)),
+      option.setName("id")
+        .setDescription("The ID of the pack to open")
+        .setRequired(true)),
 
-  async execute(interaction) {
-    const inventoryType = interaction.options.getString("type") || "packs";
-    const page = interaction.options.getInteger("page") || 1;
+  async execute(interaction, pool) {
+    const packId = interaction.options.getInteger("id");
     const userId = interaction.user.id;
-    const inventory = await getInventory(userId);
-    
-    const items = inventory[inventoryType];
-    const totalItems = items.length;
-    
-    if (totalItems === 0) {
-      return interaction.reply({
-        content: `${TYPE_EMOJIS[inventoryType]} Your ${inventoryType} inventory is empty!`,
-        ephemeral: true
-      });
-    }
-    
-    const totalPages = Math.ceil(totalItems / ITEMS_PER_PAGE);
-    if (page > totalPages) {
-      return interaction.reply({
-        content: `⚠️ Page ${page} doesn't exist! Your ${inventoryType} inventory has ${totalPages} page(s).`,
-        ephemeral: true
-      });
-    }
-    
-    const startIdx = (page - 1) * ITEMS_PER_PAGE;
-    const endIdx = startIdx + ITEMS_PER_PAGE;
-    const pageItems = items.slice(startIdx, endIdx);
-    
-    // Create different embeds for packs vs cards
-    const embed = new EmbedBuilder()
-      .setTitle(`${TYPE_EMOJIS[inventoryType]} ${interaction.user.username}'s ${inventoryType.toUpperCase()}`)
-      .setDescription(`📄 Page ${page}/${totalPages} | 📦 Total: ${totalItems}`);
 
-    if (inventoryType === "packs") {
-      embed.setColor(0x3498db) // Blue for packs
-        .addFields(
-          pageItems.map((item, idx) => ({
-            name: `📦 ${startIdx + idx + 1}. ${item.name}`,
-            value: [
-              `🆔 ID: ${item.id}`,
-              `💰 Value: ${item.price || 'N/A'} stars`,
-              `\`/open ${item.id}\` to open this pack`,
-              ...(item.description ? [`📝 ${item.description}`] : [])
-            ].join('\n'),
-            inline: false
-          }))
-        );
-    } else {
-      // Cards embed
-      embed.setColor(RARITY_COLORS[pageItems[0]?.rarity] || 0x7289DA) // Use first card's rarity color
-        .addFields(
-          pageItems.map((card, idx) => {
-            const variantEmoji = {
-              normal: "",
-              silver: "🥈 ",
-              gold: "🏆 ",
-              deluxe: "💎 "
-            }[card.variant];
-            
-            return {
-              name: `${variantEmoji}${startIdx + idx + 1}. ${card.name}`,
-              value: [
-                `✨ Rarity: ${card.rarity.toUpperCase()}`,
-                `⭐ Value: ${card.value} stars`,
-                `⚔️ OFF: ${card.stats.OFF} | 🛡️ DEF: ${card.stats.DEF}`,
-                `🎯 ABL: ${card.stats.ABL} | 🤖 MCH: ${card.stats.MCH}`,
-                `🆔 Card ID: ${card.cardId}`
-              ].join('\n'),
-              inline: true
-            };
-          })
-        );
+    // Check if user has the pack
+    const packRes = await pool.query(
+      `SELECT * FROM user_packs 
+       WHERE user_id = $1 AND pack_id = $2 AND opened = false
+       LIMIT 1`,
+      [userId, packId]
+    );
+
+    if (packRes.rows.length === 0) {
+      return interaction.reply({
+        content: "❌ You don't have an unopened pack with that ID!",
+        ephemeral: true
+      });
     }
-    
-    // Pagination buttons
-    const row = new ActionRowBuilder();
-    
-    if (page > 1) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inventory_${inventoryType}_prev_${page - 1}`)
-          .setLabel("◀ Previous")
-          .setStyle(ButtonStyle.Secondary)
+
+    const pack = packRes.rows[0];
+
+    // Mark pack as opened
+    await pool.query(
+      'UPDATE user_packs SET opened = true WHERE id = $1',
+      [pack.id]
+    );
+
+    // Generate random cards (simplified example)
+    const cardsToAdd = generateCardsFromPack(pack);
+
+    // Add cards to inventory
+    for (const card of cardsToAdd) {
+      await pool.query(
+        `INSERT INTO user_cards 
+         (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [userId, card.id, card.name, card.rarity, 
+         card.stats.OFF, card.stats.DEF, card.stats.ABL, card.stats.MCH, card.value]
       );
     }
-    
-    if (page < totalPages) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inventory_${inventoryType}_next_${page + 1}`)
-          .setLabel("Next ▶")
-          .setStyle(ButtonStyle.Secondary)
-      );
+
+    // Create embed showing the cards
+    const embed = new EmbedBuilder()
+      .setTitle(`🎉 You opened ${pack.pack_name}!`)
+      .setDescription(`You received ${cardsToAdd.length} new cards!`)
+      .setColor(0xf1c40f);
+
+    for (const card of cardsToAdd) {
+      embed.addFields({
+        name: `${card.name} (${card.rarity.toUpperCase()})`,
+        value: `⚔️ ${card.stats.OFF} 🛡️ ${card.stats.DEF} 🎯 ${card.stats.ABL} 🤖 ${card.stats.MCH}`,
+        inline: true
+      });
     }
-    
-    // Add type switcher if there are items in both categories
-    const otherType = inventoryType === "packs" ? "cards" : "packs";
-    if (inventory[otherType]?.length > 0) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inventory_${otherType}_switch_1`)
-          .setLabel(`View ${otherType}`)
-          .setStyle(ButtonStyle.Primary)
-      );
-    }
-    
-    const replyOptions = { 
-      embeds: [embed],
-      components: row.components?.length > 0 ? [row] : []
-    };
-    
-    await interaction.reply(replyOptions);
-  },
+
+    await interaction.reply({ embeds: [embed] });
+  }
 };
+
+// Simplified card generation - replace with your actual logic
+function generateCardsFromPack(pack) {
+  const rarities = ['common', 'uncommon', 'rare', 'legendary', 'mythic'];
+  const cards = [];
+  
+  // Generate 5 random cards for this example
+  for (let i = 0; i < 5; i++) {
+    const rarity = rarities[Math.floor(Math.random() * rarities.length)];
+    cards.push({
+      id: Math.floor(Math.random() * 1000),
+      name: `Card ${i+1}`,
+      rarity,
+      stats: {
+        OFF: Math.floor(Math.random() * 100),
+        DEF: Math.floor(Math.random() * 100),
+        ABL: Math.floor(Math.random() * 100),
+        MCH: Math.floor(Math.random() * 100)
+      },
+      value: rarity === 'mythic' ? 1000 : 
+             rarity === 'legendary' ? 500 :
+             rarity === 'rare' ? 250 :
+             rarity === 'uncommon' ? 100 : 50
+    });
+  }
+  
+  return cards;
+}
