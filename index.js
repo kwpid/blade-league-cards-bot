@@ -161,40 +161,44 @@ async function loadCommands() {
 
 async function registerCommands(commands) {
   try {
-    console.log('🗑️ Clearing existing guild commands...');
+    console.log('🔍 Checking for command updates...');
     
     // Get existing commands
-    let existingCommands = [];
-    try {
-      existingCommands = await rest.get(
-        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
-      );
-    } catch (error) {
-      console.error('❌ Failed to fetch existing commands:', error);
+    const existingCommands = await rest.get(
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
+    ).catch(() => []);
+
+    // Prepare new commands data
+    const commandsArray = Object.values(commands)
+      .filter(cmd => cmd.data)
+      .map(cmd => cmd.data.toJSON());
+
+    // Compare commands to see if update is needed
+    const needsUpdate = existingCommands.length !== commandsArray.length ||
+      existingCommands.some(existingCmd => {
+        const newCmd = commandsArray.find(c => c.name === existingCmd.name);
+        if (!newCmd) return true; // Command was removed
+        return JSON.stringify(existingCmd.options) !== JSON.stringify(newCmd.options) ||
+          existingCmd.description !== newCmd.description;
+      });
+
+    if (!needsUpdate) {
+      console.log('✅ Commands are up-to-date, no changes needed');
+      return false;
     }
+
+    console.log('🔄 Commands need updating, registering changes...');
     
-    // Delete all existing commands
+    // Delete all existing commands first to clean up
     if (existingCommands.length > 0) {
       const deletePromises = existingCommands.map(cmd => 
         rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id))
-          .catch(err => console.error(`❌ Failed to delete command ${cmd.name}:`, err))
       );
       await Promise.all(deletePromises);
-      console.log(`✅ Cleared ${existingCommands.length} existing commands`);
-    } else {
-      console.log('ℹ️ No existing commands to clear');
+      console.log(`🗑️ Deleted ${existingCommands.length} old commands`);
     }
 
     // Register new commands
-    const commandsArray = Object.values(commands)
-      .filter(cmd => cmd.data) // Ensure command has data
-      .map(cmd => cmd.data.toJSON());
-    
-    if (commandsArray.length === 0) {
-      throw new Error('No valid commands to register');
-    }
-    
-    console.log('📡 Registering guild commands...');
     const data = await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commandsArray }
@@ -242,31 +246,26 @@ async function startBot() {
     const commands = await loadCommands();
 
     client.once('ready', async () => {
-      console.log(`🤖 Logged in as ${client.user.tag}`);
-      console.log(`📂 Loaded ${Object.keys(commands).length} commands`);
-      
-      // Verify database first
-      await verifyDatabaseStructure();
-      
-      // Then register commands (only if not already registered)
-      if (!commandsRegistered) {
-        try {
-          await registerCommands(commands);
-          commandsRegistered = true;
-        } catch (error) {
-          console.error('❌ Command registration failed:', error);
-        }
-      }
-      
-      // Set bot presence
-      client.user.setPresence({
-        activities: [{
-          name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
-          type: ActivityType.Playing
-        }],
-        status: 'online'
-      });
-    });
+  console.log(`🤖 Logged in as ${client.user.tag}`);
+  console.log(`📂 Loaded ${Object.keys(commands).length} commands`);
+  
+  await verifyDatabaseStructure();
+  
+  try {
+    await registerCommands(commands);
+    commandsRegistered = true;
+  } catch (error) {
+    console.error('❌ Command registration failed:', error);
+  }
+  
+  client.user.setPresence({
+    activities: [{
+      name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
+      type: ActivityType.Playing
+    }],
+    status: 'online'
+  });
+});
 
     client.on('interactionCreate', async interaction => {
       if (interaction.isCommand()) {
