@@ -121,7 +121,6 @@ async function loadCommands() {
 async function registerCommands() {
   const commands = await loadCommands();
 
-  // Log commands to ensure they are being loaded
   if (commands.length === 0) {
     console.error('No commands loaded. Please check your command files.');
   } else {
@@ -131,7 +130,6 @@ async function registerCommands() {
   try {
     const guildId = process.env.GUILD_ID;
     if (process.env.NODE_ENV === 'production') {
-      // Register commands globally (it can take up to an hour to propagate)
       await client.application.commands.set(commands);
       console.log('Commands registered globally.');
     } else {
@@ -140,7 +138,6 @@ async function registerCommands() {
         return;
       }
 
-      // Log the guild IDs the bot has access to
       console.log('Guilds the bot has access to:', client.guilds.cache.map(guild => guild.id));
 
       const guild = client.guilds.cache.get(guildId);
@@ -157,16 +154,15 @@ async function registerCommands() {
   }
 }
 
-
 // Main bot function
 async function startBot() {
   try {
     console.log('Starting bot initialization...');
     await initDB();
-    await registerCommands();
 
-    client.once('ready', () => {
+    client.once('ready', async () => {
       console.log(`Logged in as ${client.user.tag}`);
+      await registerCommands(); // ✅ Register commands after login
     });
 
     client.on('interactionCreate', async interaction => {
@@ -175,7 +171,6 @@ async function startBot() {
       const command = commands.find(cmd => cmd.data.name === interaction.commandName);
       if (!command) return;
 
-      // Restrict command use if in dev mode
       if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
         return interaction.reply({
           content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
