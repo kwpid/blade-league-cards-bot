@@ -9,9 +9,9 @@ import 'dotenv/config';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Load data files
-const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8');
-const shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8');
+// Load data files - FIXED THE MISSING PARENTHESES HERE
+const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8'));
+const shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
 
 // Database connection
 const pool = new Pool({
@@ -75,7 +75,7 @@ for (const file of commandFiles) {
 // Ready event
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
-  await initDB(); // Initialize database tables when bot starts
+  await initDB();
 });
 
 // Interaction handling
