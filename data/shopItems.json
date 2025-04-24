@@ -41,6 +41,6 @@
     }
   ],
   "limitedPacks": [
-    { "id": 101, "name": "Eclipse Pack", "price": 300, "description": "Only available this week!" },
+    { "id": 101, "name": "Eclipse Pack", "price": 300, "description": "Only available this week!" }
   ]
 }
