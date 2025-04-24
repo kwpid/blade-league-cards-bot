@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Client, GatewayIntentBits, ActivityType, EmbedBuilder, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, ActivityType, EmbedBuilder, REST, Routes, SlashCommandBuilder } from 'discord.js';
 import { Pool } from 'pg';
 import 'dotenv/config';
 import { calculateCardValue, calculatePackPrice } from './utils/economy.js';
@@ -17,6 +17,22 @@ const requiredEnvVars = ['TOKEN', 'CLIENT_ID', 'GUILD_ID', 'DATABASE_URL'];
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 if (missingVars.length > 0) {
   console.error(`❌ Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
+
+// Additional env var verification
+console.log('🔍 Verifying Discord environment variables...');
+console.log(`- CLIENT_ID: ${process.env.CLIENT_ID} (${process.env.CLIENT_ID?.length} chars)`);
+console.log(`- GUILD_ID: ${process.env.GUILD_ID} (${process.env.GUILD_ID?.length} chars)`);
+console.log(`- TOKEN: ${process.env.TOKEN ? '***REDACTED***' : 'MISSING'} (${process.env.TOKEN?.length} chars)`);
+
+if (!/^\d+$/.test(process.env.GUILD_ID)) {
+  console.error('❌ GUILD_ID must be a numeric string');
+  process.exit(1);
+}
+
+if (!/^\d+$/.test(process.env.CLIENT_ID)) {
+  console.error('❌ CLIENT_ID must be a numeric string');
   process.exit(1);
 }
 
@@ -158,6 +174,18 @@ async function loadCommands() {
     }
   }
 
+  // Add test command for debugging
+  const testCommand = {
+    data: new SlashCommandBuilder()
+      .setName('test-command')
+      .setDescription('Test command for debugging'),
+    execute: async (interaction) => {
+      await interaction.reply('Test command working!');
+    }
+  };
+  commands['test-command'] = testCommand;
+  console.log('📦 Loaded debug command: test-command');
+
   console.log(`✅ Loaded ${Object.keys(commands).length} commands.`);
   return commands;
 }
@@ -170,16 +198,26 @@ async function registerCommands(commands) {
       .filter(cmd => cmd?.data)
       .map(cmd => cmd.data.toJSON());
 
+    console.log(`📋 Commands to register:`, commandsArray.map(c => c.name));
+
     if (commandsArray.length === 0) {
       throw new Error('No valid commands to register');
     }
 
+    // Add delay to avoid rate limits
+    console.log('⏳ Adding delay to avoid rate limits...');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
     // Clear existing guild-specific commands
     console.log('📡 Clearing existing guild-specific commands...');
-    await rest.put(
+    const deleteResponse = await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: [] }
     );
+    console.log(`🗑️ Cleared ${deleteResponse.length} existing commands`);
+
+    // Add another delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     // Register new guild-specific commands
     console.log('📡 Registering new guild-specific commands...');
@@ -192,7 +230,14 @@ async function registerCommands(commands) {
     console.log('📋 Registered commands:', data.map(c => c.name));
     return true;
   } catch (error) {
-    console.error('❌ Failed to register guild-specific commands:', error);
+    console.error('❌ Failed to register guild-specific commands:');
+    console.error('Error details:', error);
+    console.error('Request details:', {
+      CLIENT_ID,
+      GUILD_ID,
+      endpoint: Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+      commandsCount: commandsArray?.length || 0
+    });
     throw error;
   }
 }
