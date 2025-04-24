@@ -1,7 +1,6 @@
 import {
   SlashCommandBuilder,
-  EmbedBuilder,
-  StringSelectMenuBuilder
+  EmbedBuilder
 } from 'discord.js';
 
 const ITEMS_PER_PAGE = 9;
@@ -44,10 +43,6 @@ export default {
     const rarityFilter = interaction.options.getString('rarity');
     const page = interaction.options.getInteger('page') || 1;
 
-    await this.showInventory(interaction, pool, type, rarityFilter, page);
-  },
-
-  async showInventory(interaction, pool, type, rarityFilter, page) {
     const userId = interaction.user.id;
 
     let query = `SELECT * FROM user_${type} WHERE user_id = $1`;
@@ -96,31 +91,9 @@ export default {
       });
     }
 
-    // Rarity dropdown
-    const filterRow = new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(`inventory_filter_${type}_${page}`)
-        .setPlaceholder('Filter by rarity')
-        .addOptions([
-          { label: 'All Rarities', value: 'all' },
-          { label: 'Common', value: 'common' },
-          { label: 'Uncommon', value: 'uncommon' },
-          { label: 'Rare', value: 'rare' },
-          { label: 'Legendary', value: 'legendary' },
-          { label: 'Mythic', value: 'mythic' }
-        ])
-    );
-
-    const responseOptions = {
+    await interaction.reply({
       embeds: [embed],
-      components: [filterRow],
-      flags: 1 << 6 // Ephemeral flag
-    };
-
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply(responseOptions);
-    } else {
-      await interaction.reply(responseOptions);
-    }
+      ephemeral: true
+    });
   }
 };
