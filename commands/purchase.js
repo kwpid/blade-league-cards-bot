@@ -1,4 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
+import { shopData } from "../index.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -8,7 +9,7 @@ export default {
       option.setName("type")
         .setDescription("The type of item to purchase")
         .setRequired(true)
-        .addChoices({ name: "shop", value: "shop" }))
+        .addChoices({ name: "pack", value: "pack" }))
     .addIntegerOption(option =>
       option.setName("id")
         .setDescription("The ID of the item to purchase")
@@ -19,13 +20,8 @@ export default {
     const type = interaction.options.getString("type");
     const id = interaction.options.getInteger("id");
     
-    if (type === "shop") {
-      const packRes = await pool.query(
-        'SELECT * FROM shop_items WHERE id = $1 AND item_type = "pack"',
-        [id]
-      );
-      
-      const pack = packRes.rows[0];
+    if (type === "pack") {
+      const pack = shopData.packs.find(p => p.id === id);
       
       if (!pack) {
         return interaction.reply({ 
