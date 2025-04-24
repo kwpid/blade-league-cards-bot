@@ -73,7 +73,12 @@ async function initDB() {
             FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
           )
         `);
-        
+        await client.query(`
+  CREATE TABLE IF NOT EXISTS bot_settings (
+    setting_name VARCHAR(50) PRIMARY KEY,
+    setting_value TEXT NOT NULL
+  )
+`);
         console.log('Database tables verified');
         return;
       } finally {
