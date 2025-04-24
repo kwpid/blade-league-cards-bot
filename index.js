@@ -217,7 +217,7 @@ async function registerCommands(commands) {
       console.log(`🗑️ Deleting ${existingCommands.length} old commands...`);
       const deletePromises = existingCommands.map(cmd => 
         rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id))
-          .catch(err => console.error(`❌ Failed to delete command ${cmd.name}:`, err));
+          .catch(err => console.error(`❌ Failed to delete command ${cmd.name}:`, err))
       );
       await Promise.all(deletePromises);
       console.log(`✅ Cleared ${existingCommands.length} existing commands`);
