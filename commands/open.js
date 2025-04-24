@@ -9,7 +9,7 @@ export default {
     .setDescription('Open packs from your inventory')
     .addIntegerOption(option =>
       option.setName('id')
-        .setDescription('The ID of the pack to open')
+        .setDescription('The unique ID of the pack to open (from /inventory)')
         .setRequired(true))
     .addIntegerOption(option =>
       option.setName('quantity')
@@ -18,31 +18,45 @@ export default {
         .setMaxValue(5)),
 
   async execute(interaction, pool) {
-    const packId = interaction.options.getInteger('id');
+    const packUniqueId = interaction.options.getInteger('id');
     const quantity = interaction.options.getInteger('quantity') || 1;
     const userId = interaction.user.id;
 
-    // Check available unopened packs
+    // First check if the specified pack exists and belongs to the user
+    const packCheck = await pool.query(
+      `SELECT * FROM user_packs 
+       WHERE id = $1 AND user_id = $2 AND opened = false`,
+      [packUniqueId, userId]
+    );
+
+    if (packCheck.rows.length === 0) {
+      return interaction.reply({
+        content: `❌ You don't have an unopened pack with ID ${packUniqueId}!`,
+        ephemeral: true
+      });
+    }
+
+    // Get additional packs of the same type if quantity > 1
     const packsRes = await pool.query(
       `SELECT * FROM user_packs 
        WHERE user_id = $1 AND pack_id = $2 AND opened = false
        ORDER BY id ASC
        LIMIT $3`,
-      [userId, packId, quantity]
+      [userId, packCheck.rows[0].pack_id, quantity]
     );
 
-    if (packsRes.rows.length === 0) {
+    if (packsRes.rows.length < quantity) {
       return interaction.reply({
-        content: `❌ You don't have ${quantity} unopened pack(s) with ID ${packId}!`,
+        content: `❌ You only have ${packsRes.rows.length} unopened ${packCheck.rows[0].pack_name} pack(s)!`,
         ephemeral: true
       });
     }
 
     // Get pack rarity distribution
-    const packInfo = shopData.packs.find(p => p.id === packId);
+    const packInfo = shopData.packs.find(p => p.id === packCheck.rows[0].pack_id);
     if (!packInfo) {
       return interaction.reply({
-        content: `❌ Invalid pack ID ${packId}!`,
+        content: `❌ Invalid pack type!`,
         ephemeral: true
       });
     }
@@ -117,7 +131,7 @@ export default {
         });
       }
 
-      // DELETE the opened packs instead of marking them as opened
+      // DELETE the opened packs
       await client.query(
         `DELETE FROM user_packs 
          WHERE id = ANY($1::int[])`,
@@ -129,7 +143,7 @@ export default {
       // Create embed
       const embed = new EmbedBuilder()
         .setColor(0x0099FF)
-        .setTitle(`🎁 Opened ${quantity} ${packInfo.name}${quantity > 1 ? 's' : ''}!`)
+        .setTitle(`🎁 Opened ${quantity} ${packCheck.rows[0].pack_name}${quantity > 1 ? 's' : ''}!`)
         .setDescription(`Obtained ${insertedCards.length} card${insertedCards.length > 1 ? 's' : ''}`)
         .setThumbnail('https://i.imgur.com/r3JYj4x.png');
 
