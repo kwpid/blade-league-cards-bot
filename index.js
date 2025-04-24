@@ -3,12 +3,25 @@ import path from "path";
 import { Client, Collection, GatewayIntentBits } from "discord.js";
 import { config } from "dotenv";
 import { REST, Routes } from "discord.js";
+import { Client as PGClient } from "pg";  // Import PostgreSQL client
 
 config();
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 client.commands = new Collection();
+
+// PostgreSQL Setup
+const pgClient = new PGClient({
+  connectionString: 'postgresql://postgres:imLZWLusyTSipUOnZsAFRadaYsoHcPyl@metro.proxy.rlwy.net:30227/railway',  // Directly using the connection URL you provided
+  ssl: {
+    rejectUnauthorized: false,  // Important for secure connections to PostgreSQL
+  }
+});
+
+pgClient.connect()
+  .then(() => console.log("Connected to PostgreSQL!"))
+  .catch(err => console.error("Connection error", err.stack));
 
 // Read commands from ./commands/
 const commands = [];
@@ -132,6 +145,35 @@ client.once('ready', () => {
         }
       ], null, 2));
     }
+
+    // Example to create a table if it doesn't exist
+    pgClient.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY, 
+        username VARCHAR(255) UNIQUE NOT NULL
+      )
+    `)
+      .then(() => console.log("Table 'users' created or already exists."))
+      .catch(err => console.error("Error creating table:", err));
+});
+
+// Example function to insert data into PostgreSQL
+const insertData = async (username) => {
+  try {
+    await pgClient.query('INSERT INTO users(username) VALUES($1) ON CONFLICT (username) DO NOTHING', [username]);
+    console.log(`User ${username} inserted or already exists.`);
+  } catch (err) {
+    console.error('Error inserting data:', err);
+  }
+};
+
+// Example of using PostgreSQL inside a command
+client.on('messageCreate', async (message) => {
+  if (message.content.startsWith('!save')) {
+    const username = message.author.username;
+    await insertData(username);
+    message.reply(`Your username, ${username}, has been saved to the database!`);
+  }
 });
 
 client.login(process.env.TOKEN).catch(console.error);
