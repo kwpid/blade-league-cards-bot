@@ -3,7 +3,8 @@ import {
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle
+  ButtonStyle,
+  StringSelectMenuBuilder
 } from 'discord.js';
 
 const ITEMS_PER_PAGE = 9;
@@ -164,7 +165,7 @@ export default {
         await interaction.reply({
           embeds: [embed],
           components: [filterRow, actionRow],
-          ephemeral: true
+          flags: ['Ephemeral']
         });
       }
     } else {
@@ -177,7 +178,7 @@ export default {
         await interaction.reply({
           embeds: [embed],
           components: [actionRow],
-          ephemeral: true
+          flags: ['Ephemeral']
         });
       }
     }
