@@ -64,6 +64,7 @@ async function initDB() {
             pack_price INTEGER,
             purchase_date TIMESTAMP DEFAULT NOW(),
             opened BOOLEAN DEFAULT FALSE,
+            is_limited BOOLEAN DEFAULT FALSE,
             FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
           )
         `);
@@ -101,7 +102,6 @@ async function initDB() {
     }
   }
 }
-
 // Load commands
 async function loadCommands() {
   const commands = {};
