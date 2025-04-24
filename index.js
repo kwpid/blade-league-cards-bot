@@ -6,6 +6,10 @@ import { REST, Routes } from "discord.js";
 import { Pool } from "pg";
 import { fileURLToPath } from 'url';
 
+process.on('unhandledRejection', error => {
+  console.error('Unhandled promise rejection:', error);
+});
+
 config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -63,48 +67,38 @@ try {
 }
 
 client.on("interactionCreate", async (interaction) => {
-  if (interaction.isChatInputCommand()) {
-    const command = client.commands.get(interaction.commandName);
-
-    if (!command) return;
-
-    try {
-      await command.execute(interaction, pool);
-    } catch (error) {
-      console.error(error);
-      await interaction.reply({
-        content: "There was an error while executing this command!",
-        ephemeral: true,
-      });
+  if (!interaction.isChatInputCommand()) {
+    if (interaction.isButton()) {
+      return handleButtonInteraction(interaction);
     }
-  } else if (interaction.isButton()) {
-    if (interaction.customId.startsWith('inventory_')) {
-      const parts = interaction.customId.split('_');
-      const inventoryCommand = client.commands.get('inventory');
-      
-      if (inventoryCommand) {
-        let type, page;
-        
-        if (parts.length === 3) {
-          type = "packs";
-          page = parts[2];
-        } else {
-          type = parts[1];
-          page = parts[3];
-        }
-        
-        const fakeInteraction = {
-          ...interaction,
-          options: {
-            getString: () => type,
-            getInteger: () => parseInt(page)
-          },
-          user: interaction.user
-        };
-        
-        await inventoryCommand.execute(fakeInteraction, pool);
-        await interaction.deferUpdate();
+    return;
+  }
+
+  const command = client.commands.get(interaction.commandName);
+  if (!command) return;
+
+  try {
+    // Defer the reply first to avoid timeout
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Then execute the command
+    await command.execute(interaction, pool);
+  } catch (error) {
+    console.error(`Error executing ${interaction.commandName}`, error);
+    try {
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ 
+          content: "❌ An error occurred while executing this command!", 
+          ephemeral: true 
+        });
+      } else {
+        await interaction.reply({ 
+          content: "❌ An error occurred while executing this command!", 
+          ephemeral: true 
+        });
       }
+    } catch (err) {
+      console.error('Failed to send error message:', err);
     }
   }
 });
@@ -159,7 +153,39 @@ client.once('ready', async () => {
     console.error("Error creating tables:", err);
   }
 });
-
+async function handleButtonInteraction(interaction) {
+  if (interaction.customId.startsWith('inventory_')) {
+    const inventoryCommand = client.commands.get('inventory');
+    if (!inventoryCommand) return;
+    
+    try {
+      await interaction.deferUpdate();
+      const parts = interaction.customId.split('_');
+      let type, page;
+      
+      if (parts.length === 3) {
+        type = "packs";
+        page = parts[2];
+      } else {
+        type = parts[1];
+        page = parts[3];
+      }
+      
+      const fakeInteraction = {
+        ...interaction,
+        options: {
+          getString: () => type,
+          getInteger: () => parseInt(page)
+        },
+        user: interaction.user
+      };
+      
+      await inventoryCommand.execute(fakeInteraction, pool);
+    } catch (error) {
+      console.error('Error handling button interaction:', error);
+    }
+  }
+}
 client.login(process.env.TOKEN).catch(console.error);
 
 // Export the pool and data for use in other files
