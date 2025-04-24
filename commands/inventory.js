@@ -1,7 +1,4 @@
-import {
-  SlashCommandBuilder,
-  EmbedBuilder
-} from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
 const ITEMS_PER_PAGE = 6;
 const RARITY_COLORS = {
@@ -46,7 +43,7 @@ export default {
     const userId = interaction.user.id;
 
     try {
-      let query = `SELECT *, id as unique_id FROM user_${type} WHERE user_id = $1`;
+      let query = `SELECT * FROM user_${type} WHERE user_id = $1`;
       const params = [userId];
 
       if (type === 'cards' && rarityFilter !== 'all') {
@@ -95,16 +92,21 @@ export default {
             const packInfo = shopData.packs.find(p => p.id === pack.pack_id);
             embed.addFields({
               name: `📦 ${pack.pack_name}`,
-              value: `ID: ${pack.pack_id}\nContains: ${packInfo?.contents || 'Unknown'}\n\`/open ${pack.unique_id}\``,
+              value: `Pack ID: ${pack.pack_id}\n` +
+                     `Unique ID: ${pack.id}\n` +
+                     `Contains: ${packInfo?.contents || 'Unknown'}\n` +
+                     `\`/open ${pack.id}\``,
               inline: false
             });
           });
         } else {
           items.forEach(card => {
             const cardData = cardsData.find(c => c.id === card.card_id);
-            const uniqueId = `${card.card_id}:${card.unique_id.toString().padStart(3, '0')}`;
+            const uniqueId = `${card.card_id}:${card.id.toString().padStart(3, '0')}`;
+            const tagDisplay = card.tags?.length ? ` [${card.tags.join(' ')}]` : '';
+            
             embed.addFields({
-              name: `🃏 ${card.card_name} (${uniqueId})`,
+              name: `🃏 ${card.card_name}${tagDisplay} (${uniqueId})`,
               value:
                 `✨ ${card.rarity.charAt(0).toUpperCase() + card.rarity.slice(1)}\n` +
                 `⭐ Value: ${card.value} stars\n` +

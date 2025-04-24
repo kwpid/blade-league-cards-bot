@@ -70,7 +70,8 @@
     },
     "rarity": "mythic",
     "availableTypes": "all",
-    "exclusiveToPack": [101]
+    "exclusiveToPack": [101],
+    "tags": ["Prime"],
   },
   {
     "id": 7,
