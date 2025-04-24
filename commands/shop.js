@@ -1,19 +1,38 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { shopData } from '../index.js';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('shop')
-    .setDescription('View available packs'),
+    .setDescription('View available card packs'),
     
   async execute(interaction) {
-    const packsList = shopData.packs.map(pack => 
-      `**${pack.name}** (ID: ${pack.id}) - ${pack.price} stars\n${pack.description}`
-    ).join('\n\n');
+    const embed = new EmbedBuilder()
+      .setColor(0x00AE86)
+      .setTitle('🛒 Card Pack Shop')
+      .setDescription('Available packs you can purchase')
+      .setThumbnail('https://i.imgur.com/J8qTf7i.png') // Replace with shop image
+      .setTimestamp();
     
-    await interaction.reply({
-      content: `🛒 Available Packs:\n\n${packsList}`,
-      ephemeral: true
+    // Add each pack as a field
+    shopData.packs.forEach(pack => {
+      embed.addFields({
+        name: `${pack.name} (ID: ${pack.id})`,
+        value: [
+          `💰 **Price:** ⭐ ${pack.price}`,
+          `${pack.description}`,
+          `\`/purchase pack id:${pack.id}\``
+        ].join('\n'),
+        inline: true
+      });
+    });
+
+    // Add footer with refresh info
+    embed.setFooter({ text: 'Shop refreshes weekly • Use /purchase to buy' });
+
+    await interaction.reply({ 
+      embeds: [embed],
+      flags: "Ephemeral" 
     });
   }
 };
