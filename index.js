@@ -3,14 +3,22 @@ import path from "path";
 import { Client, Collection, GatewayIntentBits } from "discord.js";
 import { config } from "dotenv";
 import { REST, Routes } from "discord.js";
-import { Pool } from "pg"; // Using Pool instead of Client for better performance
+import { Pool } from "pg";
+import { fileURLToPath } from 'url';
 
 config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load card and shop data from JSON files
+const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8'));
+const shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
 
-// PostgreSQL Pool Setup
+// PostgreSQL Pool Setup (only for user data)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:imLZWLusyTSipUOnZsAFRadaYsoHcPyl@metro.proxy.rlwy.net:30227/railway',
   ssl: {
@@ -25,9 +33,6 @@ pool.connect()
 
 // Read commands from ./commands/
 const commands = [];
-import { fileURLToPath } from 'url';
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 const commandsPath = path.join(__dirname, "commands");
 const commandFiles = fs
   .readdirSync(commandsPath)
@@ -107,7 +112,7 @@ client.on("interactionCreate", async (interaction) => {
 client.once('ready', async () => {
   console.log(`Ready! Logged in as ${client.user.tag}`);
   
-  // Create tables if they don't exist
+  // Create tables if they don't exist (only for user data)
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_balances (
@@ -149,18 +154,6 @@ client.once('ready', async () => {
       )
     `);
     
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS shop_items (
-        id SERIAL PRIMARY KEY,
-        item_type VARCHAR(20) NOT NULL,
-        name VARCHAR(100) NOT NULL,
-        description TEXT,
-        price INTEGER NOT NULL,
-        rarity VARCHAR(20),
-        available BOOLEAN DEFAULT TRUE
-      )
-    `);
-    
     console.log("Database tables verified/created");
   } catch (err) {
     console.error("Error creating tables:", err);
@@ -169,5 +162,5 @@ client.once('ready', async () => {
 
 client.login(process.env.TOKEN).catch(console.error);
 
-// Export the pool for use in other files
-export { pool };
+// Export the pool and data for use in other files
+export { pool, cardsData, shopData };
