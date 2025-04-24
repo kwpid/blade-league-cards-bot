@@ -162,73 +162,19 @@ async function registerCommands(commands) {
   try {
     console.log('🔍 Starting command registration process...');
     
-    // Get existing commands
-    let existingCommands = [];
-    try {
-      existingCommands = await rest.get(
-        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
-      );
-      console.log(`ℹ️ Found ${existingCommands.length} existing commands`);
-    } catch (error) {
-      console.error('❌ Failed to fetch existing commands:', error);
-    }
-
-    // Prepare new commands data
+    // Prepare commands data
     const commandsArray = Object.values(commands)
       .filter(cmd => cmd?.data)
-      .map(cmd => {
-        const json = cmd.data.toJSON();
-        // Add a hash for comparison
-        json._hash = JSON.stringify({
-          name: json.name,
-          description: json.description,
-          options: json.options || []
-        });
-        return json;
-      });
+      .map(cmd => cmd.data.toJSON());
 
     if (commandsArray.length === 0) {
       throw new Error('No valid commands to register');
     }
 
-    // Compare commands to see if update is needed
-    const needsUpdate = existingCommands.length !== commandsArray.length ||
-      existingCommands.some(existingCmd => {
-        const newCmd = commandsArray.find(c => c.name === existingCmd.name);
-        if (!newCmd) return true; // Command was removed
-        
-        const existingHash = JSON.stringify({
-          name: existingCmd.name,
-          description: existingCmd.description,
-          options: existingCmd.options || []
-        });
-        return existingHash !== newCmd._hash;
-      });
-
-    if (!needsUpdate) {
-      console.log('✅ Commands are up-to-date, no changes needed');
-      return false;
-    }
-
-    console.log('🔄 Commands need updating, registering changes...');
-    
-    // Delete all existing commands first to clean up
-    if (existingCommands.length > 0) {
-      console.log(`🗑️ Deleting ${existingCommands.length} old commands...`);
-      const deletePromises = existingCommands.map(cmd => 
-        rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id))
-          .catch(err => console.error(`❌ Failed to delete command ${cmd.name}:`, err))
-      );
-      await Promise.all(deletePromises);
-      console.log(`✅ Cleared ${existingCommands.length} existing commands`);
-    }
-
-    // Register new commands (without the _hash we added)
-    const commandsToRegister = commandsArray.map(({ _hash, ...rest }) => rest);
     console.log('📡 Registering guild commands...');
     const data = await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commandsToRegister }
+      { body: commandsArray }
     );
     
     console.log(`✅ Successfully registered ${data.length} guild commands`);
