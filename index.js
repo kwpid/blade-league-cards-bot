@@ -1,20 +1,18 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Client, GatewayIntentBits, EmbedBuilder, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder } from 'discord.js';
 import { Pool } from 'pg';
 import 'dotenv/config';
 
-// Basic setup
+// Setup
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Load data files
 const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
 const cardsData = loadJSON('data/cards.json');
 const shopData = loadJSON('data/shopItems.json');
 
-// Database setup
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -22,13 +20,10 @@ const pool = new Pool({
   idleTimeoutMillis: 30000
 });
 
-// Initialize database and test mode table
-async function initDB() {
+// Initialize database and create table for test mode
+async function initializeDatabase() {
   const client = await pool.connect();
   try {
-    await client.query('SELECT NOW()');
-    console.log('Database connection successful');
-
     await client.query(`
       CREATE TABLE IF NOT EXISTS bot_settings (
         setting_key TEXT PRIMARY KEY,
@@ -36,26 +31,23 @@ async function initDB() {
       )
     `);
 
-    // Ensure test_mode is initialized
-    const res = await client.query(`SELECT * FROM bot_settings WHERE setting_key = 'test_mode'`);
-    if (res.rowCount === 0) {
-      await client.query(`INSERT INTO bot_settings (setting_key, setting_value) VALUES ('test_mode', 'false')`);
-    }
+    // Initialize test_mode setting if not present
+    await client.query(`
+      INSERT INTO bot_settings (setting_key, setting_value)
+      VALUES ('test_mode', 'false')
+      ON CONFLICT (setting_key) DO NOTHING
+    `);
 
-    console.log('Database tables verified');
-  } catch (err) {
-    console.error('Error initializing database:', err);
-    process.exit(1);
+    console.log('Database initialized successfully');
   } finally {
     client.release();
   }
 }
 
-// Load slash commands
+// Load command files from /commands
 async function loadCommands() {
   const commands = {};
-  const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
-    .filter(file => file.endsWith('.js'));
+  const commandFiles = fs.readdirSync(path.join(__dirname, 'commands')).filter(file => file.endsWith('.js'));
 
   for (const file of commandFiles) {
     try {
@@ -71,30 +63,24 @@ async function loadCommands() {
   return commands;
 }
 
-// Register slash commands per guild (instant sync)
-async function registerCommands(commands) {
-  const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-  const commandArray = Object.values(commands).map(cmd => cmd.data.toJSON());
-
+// Check if test mode is enabled
+async function isTestModeEnabled() {
   try {
-    await rest.put(
-      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-      { body: commandArray }
-    );
-    console.log('Slash commands registered (guild)');
+    const res = await pool.query(`SELECT setting_value FROM bot_settings WHERE setting_key = 'test_mode'`);
+    return res.rows[0]?.setting_value === 'true';
   } catch (err) {
-    console.error('Failed to register slash commands:', err);
+    console.error('Failed to check test mode:', err);
+    return false;
   }
 }
 
-// Main bot logic
+// Main bot function
 async function startBot() {
   try {
     console.log('Starting bot initialization...');
-    await initDB();
 
+    await initializeDatabase();
     const commands = await loadCommands();
-    await registerCommands(commands);
 
     client.once('ready', () => {
       console.log(`Logged in as ${client.user.tag}`);
@@ -102,23 +88,21 @@ async function startBot() {
 
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
+
       const command = commands[interaction.commandName];
       if (!command) return;
 
+      const isTestMode = await isTestModeEnabled();
+      const isAdmin = interaction.member?.permissions?.has('Administrator');
+
+      if (isTestMode && !isAdmin && interaction.commandName !== 'testmode') {
+        return interaction.reply({
+          content: '🚧 The bot is currently in test mode. Only admins can use commands.',
+          ephemeral: true
+        });
+      }
+
       try {
-        const isAdmin = interaction.member.permissions.has('Administrator');
-
-        // Check test mode status
-        const result = await pool.query(`SELECT setting_value FROM bot_settings WHERE setting_key = 'test_mode'`);
-        const testMode = result.rows[0]?.setting_value === 'true';
-
-        if (testMode && !isAdmin && interaction.commandName !== 'testmode') {
-          return await interaction.reply({
-            content: '🚫 The bot is currently in test mode. Only admins can use commands.',
-            ephemeral: true
-          });
-        }
-
         await command.execute(interaction, pool, { cardsData, shopData });
       } catch (error) {
         console.error(`Error executing ${interaction.commandName}:`, error);
@@ -133,12 +117,11 @@ async function startBot() {
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
   } catch (error) {
-    console.error('Fatal error during startup:', error);
+    console.error('Fatal error during bot startup:', error);
     process.exit(1);
   }
 }
 
 startBot();
 
-// Export for commands
 export { pool, cardsData, shopData };
