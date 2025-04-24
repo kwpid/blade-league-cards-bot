@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from "discord.js";
-import { MessageFlags } from "discord-api-types/v10"; // Importing MessageFlags
+import { MessageFlags } from "discord-api-types/v10";
 import { shopData } from "../index.js";
 
 export default {
@@ -36,11 +36,11 @@ export default {
         await client.query('BEGIN');
         
         const { rows } = await client.query(
-          INSERT INTO user_balances (user_id, balance)
+          `INSERT INTO user_balances (user_id, balance)
            VALUES ($1, 100)
            ON CONFLICT (user_id) 
            DO UPDATE SET user_id = EXCLUDED.user_id
-           RETURNING balance,
+           RETURNING balance`,
           [interaction.user.id]
         );
         
@@ -48,7 +48,7 @@ export default {
         
         if (currentBalance < pack.price) {
           await interaction.reply({ 
-            content: ❌ You don't have enough stars! You need ${pack.price} stars but have ${currentBalance} stars., 
+            content: `❌ You don't have enough stars! You need ${pack.price} stars but have ${currentBalance} stars.`, 
             flags: MessageFlags.Ephemeral
           });
           await client.query('ROLLBACK');
@@ -56,22 +56,22 @@ export default {
         }
 
         await client.query(
-          UPDATE user_balances 
+          `UPDATE user_balances 
            SET balance = balance - $1
-           WHERE user_id = $2,
+           WHERE user_id = $2`,
           [pack.price, interaction.user.id]
         );
         
         await client.query(
-          INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price)
-           VALUES ($1, $2, $3, $4, $5),
+          `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price)
+           VALUES ($1, $2, $3, $4, $5)`,
           [interaction.user.id, pack.id, pack.name, pack.description, pack.price]
         );
         
         await client.query('COMMIT');
         
         await interaction.reply({
-          content: ✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${currentBalance - pack.price} stars.,
+          content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${currentBalance - pack.price} stars.`,
           flags: MessageFlags.Ephemeral
         });
       } catch (error) {
