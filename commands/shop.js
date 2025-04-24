@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
 const ITEMS_PER_PAGE = 6;
 const LIMITED_PACK_IDS = [101];
@@ -19,7 +19,7 @@ export default {
       // Calculate dynamic prices for all packs
       const packsWithPrices = shopData.packs.map(pack => ({
         ...pack,
-        price: calculatePackPrice(pack, cardsData) // Use cardsData instead of shopData.cards
+        price: calculatePackPrice(pack, cardsData)
       }));
 
       // Separate into regular and limited packs
@@ -90,26 +90,7 @@ export default {
         (limitedPacks.length > 0 ? ` • ${limitedPacks.length} limited pack${limitedPacks.length !== 1 ? 's' : ''}` : '')
       );
 
-      // Add filter dropdown
-      if (page === 1) {
-        const row = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId('shop_rarity_filter')
-            .setPlaceholder('Filter by Rarity')
-            .addOptions([
-              { label: 'All Rarities', value: 'all' },
-              { label: 'Common', value: 'common' },
-              { label: 'Uncommon', value: 'uncommon' },
-              { label: 'Rare', value: 'rare' },
-              { label: 'Legendary', value: 'legendary' },
-              { label: 'Mythic', value: 'mythic' }
-            ])
-        );
-        
-        await interaction.reply({ embeds: [embed], components: [row] });
-      } else {
-        await interaction.reply({ embeds: [embed] });
-      }
+      await interaction.reply({ embeds: [embed] });
 
     } catch (error) {
       console.error('Shop command error:', error);
