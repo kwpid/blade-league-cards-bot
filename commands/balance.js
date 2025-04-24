@@ -12,13 +12,17 @@ export default {
   async execute(interaction, pool) {
     const targetUser = interaction.options.getUser("user") || interaction.user;
     
-    // Get balance from database
+    // Get balance from database with proper default
     const res = await pool.query(
-      'SELECT balance FROM user_balances WHERE user_id = $1',
+      `INSERT INTO user_balances (user_id, balance)
+       VALUES ($1, 100)
+       ON CONFLICT (user_id) 
+       DO UPDATE SET user_id = EXCLUDED.user_id
+       RETURNING balance`,
       [targetUser.id]
     );
     
-    const balance = res.rows[0]?.balance || 100;
+    const balance = res.rows[0].balance;
     const formatted = formatStars(balance);
 
     const embed = new EmbedBuilder()
