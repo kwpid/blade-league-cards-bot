@@ -1,4 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
+import { cardsData, shopData } from "../index.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -36,8 +37,8 @@ export default {
       [pack.id]
     );
 
-    // Generate random cards (simplified example)
-    const cardsToAdd = generateCardsFromPack(pack);
+    // Generate cards based on pack rarity distribution
+    const cardsToAdd = this.generateCardsFromPack(pack);
 
     // Add cards to inventory
     for (const card of cardsToAdd) {
@@ -65,33 +66,54 @@ export default {
     }
 
     await interaction.reply({ embeds: [embed] });
+  },
+
+  generateCardsFromPack(pack) {
+    const packDef = shopData.packs.find(p => p.id === pack.pack_id);
+    if (!packDef) return [];
+
+    const cards = [];
+    const totalCards = 5; // Number of cards per pack
+
+    for (let i = 0; i < totalCards; i++) {
+      // Determine rarity based on pack probabilities
+      const rand = Math.random() * 100;
+      let selectedRarity;
+      
+      if (rand < packDef.rarities.mythic) {
+        selectedRarity = 'mythic';
+      } else if (rand < packDef.rarities.mythic + packDef.rarities.legendary) {
+        selectedRarity = 'legendary';
+      } else if (rand < packDef.rarities.mythic + packDef.rarities.legendary + packDef.rarities.rare) {
+        selectedRarity = 'rare';
+      } else if (rand < packDef.rarities.mythic + packDef.rarities.legendary + packDef.rarities.rare + packDef.rarities.uncommon) {
+        selectedRarity = 'uncommon';
+      } else {
+        selectedRarity = 'common';
+      }
+
+      // Filter cards by selected rarity
+      const eligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
+      if (eligibleCards.length === 0) continue;
+
+      // Select random card from eligible ones
+      const randomCard = eligibleCards[Math.floor(Math.random() * eligibleCards.length)];
+      
+      // Calculate card value based on rarity
+      const value = {
+        'common': 50,
+        'uncommon': 100,
+        'rare': 250,
+        'legendary': 500,
+        'mythic': 1000
+      }[selectedRarity];
+
+      cards.push({
+        ...randomCard,
+        value
+      });
+    }
+    
+    return cards;
   }
 };
-
-// Simplified card generation - replace with your actual logic
-function generateCardsFromPack(pack) {
-  const rarities = ['common', 'uncommon', 'rare', 'legendary', 'mythic'];
-  const cards = [];
-  
-  // Generate 5 random cards for this example
-  for (let i = 0; i < 5; i++) {
-    const rarity = rarities[Math.floor(Math.random() * rarities.length)];
-    cards.push({
-      id: Math.floor(Math.random() * 1000),
-      name: `Card ${i+1}`,
-      rarity,
-      stats: {
-        OFF: Math.floor(Math.random() * 100),
-        DEF: Math.floor(Math.random() * 100),
-        ABL: Math.floor(Math.random() * 100),
-        MCH: Math.floor(Math.random() * 100)
-      },
-      value: rarity === 'mythic' ? 1000 : 
-             rarity === 'legendary' ? 500 :
-             rarity === 'rare' ? 250 :
-             rarity === 'uncommon' ? 100 : 50
-    });
-  }
-  
-  return cards;
-}
