@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { shopData } from '../index.js';
 
 const ITEMS_PER_PAGE = 6;
@@ -45,29 +45,8 @@ export default {
       });
     });
 
-    const row = new ActionRowBuilder();
-
-    if (currentPage > 1) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`shop_${type}_page_${currentPage - 1}`)
-          .setLabel('◀ Previous')
-          .setStyle(ButtonStyle.Secondary)
-      );
-    }
-
-    if (currentPage < totalPages) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`shop_${type}_page_${currentPage + 1}`)
-          .setLabel('Next ▶')
-          .setStyle(ButtonStyle.Secondary)
-      );
-    }
-
     await interaction.reply({
       embeds: [embed],
-      components: row.components.length ? [row] : [],
       ephemeral: true
     });
   }
