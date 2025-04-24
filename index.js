@@ -165,11 +165,13 @@ async function startBot() {
   try {
     console.log('Starting bot initialization...');
     await initDB();
-    await registerCommands();
-
-    client.once('ready', () => {
-      console.log(`Logged in as ${client.user.tag}`);
+    
+    // Wait for client to be ready before registering commands
+    await new Promise((resolve) => {
+      client.once('ready', resolve);
     });
+    
+    await registerCommands();
 
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
