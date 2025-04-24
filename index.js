@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Client, GatewayIntentBits, EmbedBuilder, REST, Routes } from 'discord.js';
+import { Client, GatewayIntentBits, REST, Routes } from 'discord.js';
 import { Pool } from 'pg';
 import 'dotenv/config';
 
@@ -54,7 +54,6 @@ async function initDB() {
           )
         `);
 
-        // Rest of your table creation queries...
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_packs (
             id SERIAL PRIMARY KEY,
@@ -142,6 +141,32 @@ async function registerCommands(commands) {
   }
 }
 
+// Verify and update database structure if needed
+async function verifyDatabaseStructure() {
+  const client = await pool.connect();
+  try {
+    const checkRes = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='user_balances' AND column_name='last_daily_claim'
+    `);
+
+    if (checkRes.rows.length === 0) {
+      console.log('Adding missing last_daily_claim column...');
+      await client.query(`
+        ALTER TABLE user_balances 
+        ADD COLUMN last_daily_claim TIMESTAMP WITH TIME ZONE
+      `);
+      console.log('Database structure updated successfully');
+    }
+  } catch (error) {
+    console.error('Database verification failed:', error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // Start bot
 async function startBot() {
   try {
@@ -152,15 +177,13 @@ async function startBot() {
     client.once('ready', () => {
       console.log(`Logged in as ${client.user.tag}`);
       console.log(`Loaded ${Object.keys(commands).length} commands`);
-      
-      // Add this to verify the database structure on startup
       verifyDatabaseStructure();
     });
 
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
 
-      // Debug commands
+      // Admin-only debug command
       if (interaction.commandName === 'debug-refresh') {
         if (!interaction.memberPermissions.has('Administrator')) {
           return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
@@ -181,7 +204,6 @@ async function startBot() {
         }
       }
 
-      // Normal command handling
       const command = commands[interaction.commandName];
       if (!command) return;
 
@@ -209,41 +231,12 @@ async function startBot() {
     });
 
     await registerCommands(commands);
-    await verifyDatabaseStructure(); // Verify DB on startup
+    await verifyDatabaseStructure();
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
-
   } catch (error) {
     console.error('Fatal error during bot startup:', error);
     process.exit(1);
-  }
-}
-
-// Add this new function to verify/update database structure
-async function verifyDatabaseStructure() {
-  const client = await pool.connect();
-  try {
-    // Check if column exists
-    const checkRes = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name='user_balances' AND column_name='last_daily_claim'
-    `);
-
-    // Add column if it doesn't exist
-    if (checkRes.rows.length === 0) {
-      console.log('Adding missing last_daily_claim column...');
-      await client.query(`
-        ALTER TABLE user_balances 
-        ADD COLUMN last_daily_claim TIMESTAMP WITH TIME ZONE
-      `);
-      console.log('Database structure updated successfully');
-    }
-  } catch (error) {
-    console.error('Database verification failed:', error);
-    throw error;
-  } finally {
-    client.release();
   }
 }
 
