@@ -231,36 +231,38 @@ async function startBot() {
       } else if (interaction.isButton() || interaction.isStringSelectMenu()) {
         // Handle button and select menu interactions
         try {
-          if (interaction.customId.startsWith('inv_')) {
-            // Handle inventory pagination
-            const [_, type, rarityFilter, page] = interaction.customId.split('_');
-            const inventoryCommand = commands['inventory'];
-            
-            if (!inventoryCommand) {
-              throw new Error('Inventory command not found');
-            }
+          if (interaction.customId.startsWith('inv_')) // Replace this part in index.js (around line 256):
+if (interaction.customId.startsWith('inv_')) {
+    // Handle inventory pagination
+    const [_, type, rarityFilter, page] = interaction.customId.split('_');
+    const inventoryCommand = commands['inventory'];
+    
+    if (!inventoryCommand) {
+        throw new Error('Inventory command not found');
+    }
 
-            // Create options for the inventory command
-            const options = {
-              getString: (name) => {
+    // Create a proper interaction object that maintains all methods
+    const modifiedInteraction = {
+        ...interaction,
+        isButton: () => true,
+        isStringSelectMenu: () => false,
+        options: {
+            getString: (name) => {
                 if (name === 'type') return type;
                 if (name === 'rarity') return rarityFilter === 'all' ? null : rarityFilter;
                 return null;
-              },
-              getInteger: (name) => {
+            },
+            getInteger: (name) => {
                 if (name === 'page') return parseInt(page);
                 return null;
-              }
-            };
+            }
+        },
+        user: interaction.user
+    };
 
-            await inventoryCommand.execute({
-              ...interaction,
-              options,
-              user: interaction.user
-            }, pool, { cardsData, shopData });
-            
-            await interaction.deferUpdate();
-          } else if (interaction.customId === 'inventory_filter') {
+    await inventoryCommand.execute(modifiedInteraction, pool, { cardsData, shopData });
+    await interaction.deferUpdate();
+} else if (interaction.customId === 'inventory_filter') {
             // Handle rarity filter selection
             const type = interaction.message.embeds[0].title.includes('Packs') ? 'packs' : 'cards';
             const inventoryCommand = commands['inventory'];
