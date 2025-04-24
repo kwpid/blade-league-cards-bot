@@ -30,8 +30,8 @@ try {
   console.log("Current directory:", __dirname);
   console.log("Files in data directory:", fs.readdirSync(path.join(__dirname, 'data')));
   
-  cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8'));
-  shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
+  cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8');
+  shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8');
   
   console.log('Cards data loaded:', cardsData.length, 'cards');
   console.log('Shop data loaded:', shopData.packs.length, 'packs');
@@ -101,43 +101,36 @@ async function startBot() {
       console.log(`Health check server running on port ${PORT}`);
     });
 
+    // Client event handlers
     client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) {
-    if (interaction.isButton()) {
-      return handleButtonInteraction(interaction);
-    }
-    return;
-  }
-
-  const command = client.commands.get(interaction.commandName);
-  if (!command) return;
-
-  try {
-    // Defer the reply first to avoid timeout
-    await interaction.deferReply();
-    
-    // Then execute the command
-    await command.execute(interaction, pool);
-  } catch (error) {
-    console.error(`Error executing ${interaction.commandName}:`, error);
-    
-    try {
-      const content = "❌ An error occurred while executing this command!";
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content });
-      } else {
-        await interaction.reply({ content });
+      if (!interaction.isChatInputCommand()) {
+        if (interaction.isButton()) {
+          return handleButtonInteraction(interaction);
+        }
+        return;
       }
-    } catch (err) {
-      console.error('Failed to send error message:', err);
-    }
-  }
-});
+
+      const command = client.commands.get(interaction.commandName);
+      if (!command) return;
+
+      try {
+        await interaction.deferReply();
+        await command.execute(interaction, pool);
+      } catch (error) {
+        console.error(`Error executing ${interaction.commandName}:`, error);
+        try {
+          await interaction.editReply({ 
+            content: "❌ An error occurred while executing this command!" 
+          });
+        } catch (err) {
+          console.error('Failed to send error message:', err);
+        }
+      }
+    });
 
     client.once('ready', async () => {
       console.log(`Ready! Logged in as ${client.user.tag}`);
       
-      // Create tables if they don't exist
       try {
         await pool.query(`
           CREATE TABLE IF NOT EXISTS user_balances (
