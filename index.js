@@ -12,6 +12,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load config.json
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
+// Verify environment variables
+const requiredEnvVars = ['TOKEN', 'CLIENT_ID', 'GUILD_ID', 'DATABASE_URL'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingVars.length > 0) {
+  console.error(`❌ Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
+
 // Log Dev Mode status
 console.log(`🧪 Dev Mode is ${config.devMode ? 'ENABLED (Admin-only)' : 'DISABLED (Public)'}`);
 console.log(`💰 Current ROI: ${(config.roiPercentage * 100).toFixed(0)}%`);
@@ -19,16 +27,10 @@ console.log(`💰 Current ROI: ${(config.roiPercentage * 100).toFixed(0)}%`);
 // Create Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
-// Track command registration status
-let commandsRegistered = false;
-
-// Load data files
-const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
-const cardsData = loadJSON('data/cards.json');
-const shopData = {
-  ...loadJSON('data/shopItems.json'),
-  roiPercentage: config.roiPercentage
-};
+// Discord REST setup
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
+const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 // Database setup
 const pool = new Pool({
@@ -38,16 +40,13 @@ const pool = new Pool({
   idleTimeoutMillis: 30000
 });
 
-// Discord REST setup
-const CLIENT_ID = process.env.CLIENT_ID;
-const GUILD_ID = process.env.GUILD_ID;
-const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
-
-// Validate environment variables
-if (!CLIENT_ID || !GUILD_ID || !process.env.TOKEN) {
-  console.error('❌ Missing required environment variables: CLIENT_ID, GUILD_ID, or TOKEN');
-  process.exit(1);
-}
+// Load data files
+const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
+const cardsData = loadJSON('data/cards.json');
+const shopData = {
+  ...loadJSON('data/shopItems.json'),
+  roiPercentage: config.roiPercentage
+};
 
 // Database initialization
 async function initDB() {
@@ -161,25 +160,49 @@ async function loadCommands() {
 
 async function registerCommands(commands) {
   try {
-    console.log('🔍 Checking for command updates...');
+    console.log('🔍 Starting command registration process...');
     
     // Get existing commands
-    const existingCommands = await rest.get(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
-    ).catch(() => []);
+    let existingCommands = [];
+    try {
+      existingCommands = await rest.get(
+        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
+      );
+      console.log(`ℹ️ Found ${existingCommands.length} existing commands`);
+    } catch (error) {
+      console.error('❌ Failed to fetch existing commands:', error);
+    }
 
     // Prepare new commands data
     const commandsArray = Object.values(commands)
-      .filter(cmd => cmd.data)
-      .map(cmd => cmd.data.toJSON());
+      .filter(cmd => cmd?.data)
+      .map(cmd => {
+        const json = cmd.data.toJSON();
+        // Add a hash for comparison
+        json._hash = JSON.stringify({
+          name: json.name,
+          description: json.description,
+          options: json.options || []
+        });
+        return json;
+      });
+
+    if (commandsArray.length === 0) {
+      throw new Error('No valid commands to register');
+    }
 
     // Compare commands to see if update is needed
     const needsUpdate = existingCommands.length !== commandsArray.length ||
       existingCommands.some(existingCmd => {
         const newCmd = commandsArray.find(c => c.name === existingCmd.name);
         if (!newCmd) return true; // Command was removed
-        return JSON.stringify(existingCmd.options) !== JSON.stringify(newCmd.options) ||
-          existingCmd.description !== newCmd.description;
+        
+        const existingHash = JSON.stringify({
+          name: existingCmd.name,
+          description: existingCmd.description,
+          options: existingCmd.options || []
+        });
+        return existingHash !== newCmd._hash;
       });
 
     if (!needsUpdate) {
@@ -191,17 +214,21 @@ async function registerCommands(commands) {
     
     // Delete all existing commands first to clean up
     if (existingCommands.length > 0) {
+      console.log(`🗑️ Deleting ${existingCommands.length} old commands...`);
       const deletePromises = existingCommands.map(cmd => 
         rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id))
+          .catch(err => console.error(`❌ Failed to delete command ${cmd.name}:`, err));
       );
       await Promise.all(deletePromises);
-      console.log(`🗑️ Deleted ${existingCommands.length} old commands`);
+      console.log(`✅ Cleared ${existingCommands.length} existing commands`);
     }
 
-    // Register new commands
+    // Register new commands (without the _hash we added)
+    const commandsToRegister = commandsArray.map(({ _hash, ...rest }) => rest);
+    console.log('📡 Registering guild commands...');
     const data = await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: commandsArray }
+      { body: commandsToRegister }
     );
     
     console.log(`✅ Successfully registered ${data.length} guild commands`);
@@ -246,26 +273,32 @@ async function startBot() {
     const commands = await loadCommands();
 
     client.once('ready', async () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-  console.log(`📂 Loaded ${Object.keys(commands).length} commands`);
-  
-  await verifyDatabaseStructure();
-  
-  try {
-    await registerCommands(commands);
-    commandsRegistered = true;
-  } catch (error) {
-    console.error('❌ Command registration failed:', error);
-  }
-  
-  client.user.setPresence({
-    activities: [{
-      name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
-      type: ActivityType.Playing
-    }],
-    status: 'online'
-  });
-});
+      console.log(`🤖 Logged in as ${client.user.tag}`);
+      
+      // Wait a brief moment to ensure everything is connected
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      try {
+        // Verify database first
+        await verifyDatabaseStructure();
+        
+        // Register commands (will only update if needed)
+        await registerCommands(commands);
+        
+        // Set bot presence
+        client.user.setPresence({
+          activities: [{
+            name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
+            type: ActivityType.Playing
+          }],
+          status: 'online'
+        });
+        
+        console.log('🎉 Bot is fully initialized!');
+      } catch (error) {
+        console.error('💥 Failed during ready handler:', error);
+      }
+    });
 
     client.on('interactionCreate', async interaction => {
       if (interaction.isCommand()) {
@@ -276,7 +309,6 @@ async function startBot() {
           }
           try {
             const commands = await loadCommands();
-            commandsRegistered = false; // Reset flag to force re-registration
             await registerCommands(commands);
             await verifyDatabaseStructure();
             return interaction.reply({ 
@@ -361,8 +393,13 @@ async function startBot() {
       }
     });
 
+    // Error handling
+    process.on('unhandledRejection', error => {
+      console.error('Unhandled promise rejection:', error);
+    });
+
     await client.login(process.env.TOKEN);
-    console.log('🎉 Bot is now running!');
+    console.log('🔌 Bot is connecting to Discord...');
 
   } catch (error) {
     console.error('💥 Fatal error during bot startup:', error);
@@ -371,7 +408,10 @@ async function startBot() {
 }
 
 // Start the bot
-startBot();
+startBot().catch(error => {
+  console.error('💥 Fatal error during startup:', error);
+  process.exit(1);
+});
 
 export { 
   pool, 
