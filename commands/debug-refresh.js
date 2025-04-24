@@ -10,7 +10,6 @@ export default {
       return interaction.reply({ content: '❌ This command is restricted to server admins.', ephemeral: true });
     }
 
-    // The actual logic is handled inside interactionCreate in your main file
     return interaction.reply({
       content: '✅ Refreshing commands and verifying database...',
       ephemeral: true
