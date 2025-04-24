@@ -103,7 +103,7 @@ export default {
           items.forEach(card => {
             const cardData = cardsData.find(c => c.id === card.card_id);
             const uniqueId = `${card.card_id}:${card.id.toString().padStart(3, '0')}`;
-            const tagDisplay = card.tags?.length ? ` [${card.tags.join(' ')}]` : '';
+            const tagDisplay = Array.isArray(card.tags) && card.tags.length ? ` [${card.tags.join(' ')}]` : '';
             
             embed.addFields({
               name: `🃏 ${card.card_name}${tagDisplay} (${uniqueId})`,
