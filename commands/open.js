@@ -128,13 +128,13 @@ export default {
     try {
       await client.query('BEGIN');
 
-      // Insert new cards
+      // Insert new cards with tags
       const insertedCards = [];
       for (const card of cardsToAdd) {
         const res = await client.query(
           `INSERT INTO user_cards 
-           (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value, tags)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING id`,
           [
             userId, 
@@ -145,7 +145,8 @@ export default {
             card.stats.DEF, 
             card.stats.ABL, 
             card.stats.MCH, 
-            card.value
+            card.value,
+            card.tags || null
           ]
         );
         insertedCards.push({
@@ -163,7 +164,7 @@ export default {
 
       await client.query('COMMIT');
 
-      // Build results embed
+      // Build results embed with tag display
       const embed = new EmbedBuilder()
         .setColor(0x0099FF)
         .setTitle(`🎁 Opened ${quantity} ${packCheck.rows[0].pack_name}${quantity > 1 ? 's' : ''}!`)
@@ -172,8 +173,10 @@ export default {
 
       insertedCards.forEach((card, idx) => {
         const uniqueId = `${card.id}:${card.unique_id.toString().padStart(3, '0')}`;
+        const tagDisplay = card.tags?.length ? ` [${card.tags.join(' ')}]` : '';
+        
         embed.addFields({
-          name: `#${idx + 1} ${card.name} (${uniqueId})`,
+          name: `#${idx + 1} ${card.name}${tagDisplay} (${uniqueId})`,
           value: `✨ ${card.rarity.toUpperCase()} • ⭐ ${card.value}\n` +
                  `⚔️${card.stats.OFF} 🛡️${card.stats.DEF} 🎯${card.stats.ABL} 🤖${card.stats.MCH}`,
           inline: true
