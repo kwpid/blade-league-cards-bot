@@ -160,7 +160,7 @@ async function loadCommands() {
 
 async function registerCommands(commands) {
   try {
-    console.log('🔍 Starting guild-specific command registration process...');
+    console.log('🔍 Starting command registration process...');
     
     // Prepare commands data
     const commandsArray = Object.values(commands)
@@ -171,25 +171,17 @@ async function registerCommands(commands) {
       throw new Error('No valid commands to register');
     }
 
-    // Clear existing guild-specific commands
-    console.log('📡 Clearing existing guild-specific commands...');
-    await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), // Guild-specific commands
-      { body: [] }
-    );
-
-    // Register new guild-specific commands
-    console.log('📡 Registering new guild-specific commands...');
+    console.log('📡 Registering guild commands...');
     const data = await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), // Guild-specific commands
+      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
       { body: commandsArray }
     );
-
-    console.log(`✅ Successfully registered ${data.length} guild-specific commands`);
+    
+    console.log(`✅ Successfully registered ${data.length} guild commands`);
     console.log('📋 Registered commands:', data.map(c => c.name));
     return true;
   } catch (error) {
-    console.error('❌ Failed to register guild-specific commands:', error);
+    console.error('❌ Failed to register commands:', error);
     throw error;
   }
 }
