@@ -140,9 +140,12 @@ async function registerCommands() {
         return;
       }
 
+      // Log the guild IDs the bot has access to
+      console.log('Guilds the bot has access to:', client.guilds.cache.map(guild => guild.id));
+
       const guild = client.guilds.cache.get(guildId);
       if (!guild) {
-        console.error(`Guild with ID ${guildId} not found. Ensure the bot is in the server.`);
+        console.error(`Guild with ID ${guildId} not found in the cache. Ensure the bot is in the server.`);
         return;
       }
 
