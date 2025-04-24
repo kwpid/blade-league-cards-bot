@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';  // Added EmbedBuilder
 import { cardsData, shopData } from '../index.js';
 
 export default {
