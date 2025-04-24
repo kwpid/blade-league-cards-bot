@@ -5,7 +5,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   StringSelectMenuBuilder,
-  ComponentType
+  InteractionType
 } from 'discord.js';
 
 const ITEMS_PER_PAGE = 9;
@@ -44,32 +44,52 @@ export default {
         .setMinValue(1)),
 
   async execute(interaction, pool) {
-    const type = interaction.options?.getString('type') || 'cards';
-    const rarityFilter = interaction.options?.getString('rarity');
-    let page = interaction.options?.getInteger('page') || 1;
-    const userId = interaction.user.id;
-
     // Handle button interactions
-    if (interaction.isButton()) {
-      const [_, btnType, btnRarity, btnPage] = interaction.customId.split('_');
-      page = parseInt(btnPage);
-      return await this.showInventory(interaction, pool, btnType, btnRarity === 'all' ? null : btnRarity, page);
+    if (interaction.type === InteractionType.MessageComponent) {
+      if (interaction.isButton()) {
+        return this.handleButtonInteraction(interaction, pool);
+      }
+      if (interaction.isStringSelectMenu()) {
+        return this.handleSelectMenuInteraction(interaction, pool);
+      }
     }
 
-    // Handle select menu interactions
-    if (interaction.isStringSelectMenu()) {
-      const [_, __, menuType, menuPage] = interaction.customId.split('_');
-      const selectedRarity = interaction.values[0];
-      return await this.showInventory(interaction, pool, menuType, selectedRarity === 'all' ? null : selectedRarity, parseInt(menuPage));
-    }
-
-    // Default slash command handling
+    // Handle slash command
+    const type = interaction.options.getString('type') || 'cards';
+    const rarityFilter = interaction.options.getString('rarity');
+    const page = interaction.options.getInteger('page') || 1;
+    
     await this.showInventory(interaction, pool, type, rarityFilter, page);
   },
 
+  async handleButtonInteraction(interaction, pool) {
+    const [_, type, rarityFilter, page] = interaction.customId.split('_');
+    await this.showInventory(
+      interaction, 
+      pool, 
+      type, 
+      rarityFilter === 'all' ? null : rarityFilter, 
+      parseInt(page)
+    );
+  },
+
+  async handleSelectMenuInteraction(interaction, pool) {
+    const [_, __, type, currentPage] = interaction.customId.split('_');
+    const rarityFilter = interaction.values[0];
+    await this.showInventory(
+      interaction,
+      pool,
+      type,
+      rarityFilter === 'all' ? null : rarityFilter,
+      parseInt(currentPage)
+    );
+  },
+
   async showInventory(interaction, pool, type, rarityFilter, page) {
+    const userId = interaction.user.id;
+
     let query = `SELECT * FROM user_${type} WHERE user_id = $1`;
-    const params = [interaction.user.id];
+    const params = [userId];
 
     if (type === 'cards' && rarityFilter) {
       query += ` AND rarity = $2`;
@@ -84,7 +104,7 @@ export default {
     const { rows: items } = await pool.query(query, params);
     const { rows: [{ count: totalCount }] } = await pool.query(
       `SELECT COUNT(*) FROM user_${type} WHERE user_id = $1${rarityFilter ? ` AND rarity = $2` : ''}`,
-      [interaction.user.id, ...(rarityFilter ? [rarityFilter] : [])]
+      [userId, ...(rarityFilter ? [rarityFilter] : [])]
     );
 
     const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
@@ -151,7 +171,7 @@ export default {
     const responseOptions = {
       embeds: [embed],
       components: [filterRow, row].filter(row => row.components.length > 0),
-      ephemeral: true
+      flags: 1 << 6 // Ephemeral flag
     };
 
     if (interaction.deferred || interaction.replied) {
