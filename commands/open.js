@@ -96,9 +96,9 @@ export default {
   mythic: 1000
 }[randomCard.rarity];
 
-// Calculate total stats and a bonus (e.g., 2 coins per stat point)
+// Calculate total stats and a bonus (e.g., 0.6 stars per stat point)
 const totalStats = randomCard.stats.OFF + randomCard.stats.DEF + randomCard.stats.ABL + randomCard.stats.MCH;
-const statBonus = Math.floor(totalStats * 2); // tweak multiplier if needed
+const statBonus = Math.floor(totalStats * 0.6); 
 
 cardsToAdd.push({
   ...randomCard,
