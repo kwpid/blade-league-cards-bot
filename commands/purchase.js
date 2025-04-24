@@ -5,45 +5,41 @@ import { shopData } from "../index.js";
 export default {
   data: new SlashCommandBuilder()
     .setName("purchase")
-    .setDescription("Purchase a pack from the shop")
+    .setDescription("Purchase an item from the shop")
     .addStringOption(option =>
       option.setName("type")
-        .setDescription("The type of item to purchase (only 'pack' is valid)")
+        .setDescription("The type of item to purchase")
         .setRequired(true)
-        .addChoices({ name: "pack", value: "pack" }))
+        .addChoices(
+          { name: "pack", value: "pack" },
+          { name: "limited pack", value: "limitedPack" }
+        ))
     .addIntegerOption(option =>
       option.setName("id")
-        .setDescription("The ID of the pack to purchase")
+        .setDescription("The ID of the item to purchase")
         .setRequired(true)
         .setMinValue(1)),
 
   async execute(interaction, pool) {
     const type = interaction.options.getString("type");
     const id = interaction.options.getInteger("id");
-
-    if (type !== "pack") {
-      return interaction.reply({
-        content: `❌ Invalid type! Only 'pack' is supported.`,
+    
+    // Determine which shop category to look in
+    const shopCategory = type === "limitedPack" ? "limitedPacks" : "packs";
+    const pack = shopData[shopCategory].find(p => p.id === id);
+    
+    if (!pack) {
+      return interaction.reply({ 
+        content: `❌ Invalid ${type === "limitedPack" ? "limited pack" : "pack"} ID! Use /shop to see available items.`, 
         flags: MessageFlags.Ephemeral
       });
     }
-
-    const allPacks = [...(shopData.packs || []), ...(shopData.limitedPacks || [])];
-    const item = allPacks.find(p => p.id === id);
-
-    if (!item) {
-      return interaction.reply({
-        content: `❌ Invalid pack ID! Use /shop to view available packs.`,
-        flags: MessageFlags.Ephemeral
-      });
-    }
-
-    const isLimited = (shopData.limitedPacks || []).some(p => p.id === item.id);
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-
+      
+      // Check or create user balance
       const { rows } = await client.query(
         `INSERT INTO user_balances (user_id, balance)
          VALUES ($1, 100)
@@ -52,35 +48,37 @@ export default {
          RETURNING balance`,
         [interaction.user.id]
       );
-
+      
       const currentBalance = rows[0].balance;
-
-      if (currentBalance < item.price) {
+      
+      if (currentBalance < pack.price) {
         await interaction.reply({ 
-          content: `❌ You don't have enough stars! You need ${item.price} stars but have ${currentBalance} stars.`,
+          content: `❌ You don't have enough stars! You need ⭐ ${pack.price} stars but have ⭐ ${currentBalance} stars.`, 
           flags: MessageFlags.Ephemeral
         });
         await client.query('ROLLBACK');
         return;
       }
 
+      // Deduct balance
       await client.query(
         `UPDATE user_balances 
          SET balance = balance - $1
          WHERE user_id = $2`,
-        [item.price, interaction.user.id]
+        [pack.price, interaction.user.id]
       );
-
+      
+      // Add pack to user's collection
       await client.query(
         `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price, is_limited)
          VALUES ($1, $2, $3, $4, $5, $6)`,
-        [interaction.user.id, item.id, item.name, item.description, item.price, isLimited]
+        [interaction.user.id, pack.id, pack.name, pack.description, pack.price, type === "limitedPack"]
       );
-
+      
       await client.query('COMMIT');
-
+      
       await interaction.reply({
-        content: `✅ Purchased **${item.name}** for ⭐ ${item.price} stars!\nYour new balance is ⭐ ${currentBalance - item.price} stars.`,
+        content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${currentBalance - pack.price} stars.`,
         flags: MessageFlags.Ephemeral
       });
     } catch (error) {
