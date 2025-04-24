@@ -6,7 +6,6 @@ import { Pool } from 'pg';
 import 'dotenv/config';
 import { calculateCardValue, calculatePackPrice } from './utils/economy.js';
 
-
 // Setup __dirname for ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,6 +18,9 @@ console.log(`💰 Current ROI: ${(config.roiPercentage * 100).toFixed(0)}%`);
 
 // Create Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+
+// Track command registration status
+let commandsRegistered = false;
 
 // Load data files
 const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
@@ -162,19 +164,36 @@ async function registerCommands(commands) {
     console.log('🗑️ Clearing existing guild commands...');
     
     // Get existing commands
-    const existingCommands = await rest.get(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
-    );
+    let existingCommands = [];
+    try {
+      existingCommands = await rest.get(
+        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID)
+      );
+    } catch (error) {
+      console.error('❌ Failed to fetch existing commands:', error);
+    }
     
     // Delete all existing commands
-    const deletePromises = existingCommands.map(cmd => 
-      rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id))
-    );
-    await Promise.all(deletePromises);
-    console.log(`✅ Cleared ${existingCommands.length} existing commands`);
+    if (existingCommands.length > 0) {
+      const deletePromises = existingCommands.map(cmd => 
+        rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id))
+          .catch(err => console.error(`❌ Failed to delete command ${cmd.name}:`, err))
+      );
+      await Promise.all(deletePromises);
+      console.log(`✅ Cleared ${existingCommands.length} existing commands`);
+    } else {
+      console.log('ℹ️ No existing commands to clear');
+    }
 
     // Register new commands
-    const commandsArray = Object.values(commands).map(cmd => cmd.data.toJSON());
+    const commandsArray = Object.values(commands)
+      .filter(cmd => cmd.data) // Ensure command has data
+      .map(cmd => cmd.data.toJSON());
+    
+    if (commandsArray.length === 0) {
+      throw new Error('No valid commands to register');
+    }
+    
     console.log('📡 Registering guild commands...');
     const data = await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
@@ -183,6 +202,7 @@ async function registerCommands(commands) {
     
     console.log(`✅ Successfully registered ${data.length} guild commands`);
     console.log('📋 Registered commands:', data.map(c => c.name));
+    return true;
   } catch (error) {
     console.error('❌ Failed to register commands:', error);
     throw error;
@@ -228,11 +248,14 @@ async function startBot() {
       // Verify database first
       await verifyDatabaseStructure();
       
-      // Then register commands
-      try {
-        await registerCommands(commands);
-      } catch (error) {
-        console.error('❌ Command registration failed:', error);
+      // Then register commands (only if not already registered)
+      if (!commandsRegistered) {
+        try {
+          await registerCommands(commands);
+          commandsRegistered = true;
+        } catch (error) {
+          console.error('❌ Command registration failed:', error);
+        }
       }
       
       // Set bot presence
@@ -254,6 +277,7 @@ async function startBot() {
           }
           try {
             const commands = await loadCommands();
+            commandsRegistered = false; // Reset flag to force re-registration
             await registerCommands(commands);
             await verifyDatabaseStructure();
             return interaction.reply({ 
@@ -280,13 +304,13 @@ async function startBot() {
         }
 
         try {
-await command.execute(interaction, pool, { 
-    cardsData, 
-    shopData,
-    calculateCardValue,
-    calculatePackPrice,
-    config
-  });
+          await command.execute(interaction, pool, { 
+            cardsData, 
+            shopData,
+            calculateCardValue,
+            calculatePackPrice,
+            config
+          });
         } catch (error) {
           console.error(`❌ Error executing ${interaction.commandName}:`, error);
           const errorMessage = error.code === '42703' 
