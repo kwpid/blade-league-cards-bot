@@ -22,7 +22,7 @@ export default {
     const quantity = interaction.options.getInteger('quantity') || 1;
     const userId = interaction.user.id;
 
-    // First check if the specified pack exists and belongs to the user
+    // Verify the pack exists and belongs to the user
     const packCheck = await pool.query(
       `SELECT * FROM user_packs 
        WHERE id = $1 AND user_id = $2 AND opened = false`,
@@ -36,7 +36,7 @@ export default {
       });
     }
 
-    // Get additional packs of the same type if quantity > 1
+    // Get additional packs of same type if quantity > 1
     const packsRes = await pool.query(
       `SELECT * FROM user_packs 
        WHERE user_id = $1 AND pack_id = $2 AND opened = false
@@ -52,7 +52,7 @@ export default {
       });
     }
 
-    // Get pack rarity distribution
+    // Get pack data including allowedCards
     const packInfo = shopData.packs.find(p => p.id === packCheck.rows[0].pack_id);
     if (!packInfo) {
       return interaction.reply({
@@ -61,7 +61,7 @@ export default {
       });
     }
 
-    // Generate cards using pack's rarity distribution
+    // Generate cards with pack restrictions
     const cardsToAdd = [];
     for (let i = 0; i < quantity * CARDS_PER_PACK; i++) {
       // Determine rarity based on pack's distribution
@@ -77,29 +77,35 @@ export default {
         }
       }
 
-      // Filter cards by selected rarity and pack restrictions
+      // Filter cards with strict pack exclusivity checks
       let eligibleCards = cardsData.filter(card => {
-        const matchesRarity = card.rarity === selectedRarity;
-        // If pack has allowedCards, only include those cards
-        if (packInfo.allowedCards) {
-          return matchesRarity && packInfo.allowedCards.includes(card.id);
+        // Skip cards exclusive to other packs
+        if (card.exclusiveToPack && !card.exclusiveToPack.includes(packInfo.id)) {
+          return false;
         }
-        return matchesRarity;
+        
+        // If pack has allowedCards, enforce them strictly
+        if (packInfo.allowedCards) {
+          return packInfo.allowedCards.includes(card.id) && card.rarity === selectedRarity;
+        }
+        
+        return card.rarity === selectedRarity;
       });
 
+      // Fallback if no cards match (shouldn't happen with proper config)
       if (eligibleCards.length === 0) {
-        // Fallback - if no cards match both rarity and allowedCards, just use allowedCards
-        if (packInfo.allowedCards) {
-          eligibleCards = cardsData.filter(card => packInfo.allowedCards.includes(card.id));
-        } else {
-          // Original fallback
-          eligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
-        }
+        eligibleCards = cardsData.filter(card => {
+          if (card.exclusiveToPack && !card.exclusiveToPack.includes(packInfo.id)) {
+            return false;
+          }
+          return packInfo.allowedCards ? packInfo.allowedCards.includes(card.id) : true;
+        });
       }
 
-      // Select random card from filtered pool
+      // Select random card from final pool
       const randomCard = eligibleCards[Math.floor(Math.random() * eligibleCards.length)];
       
+      // Calculate card value
       const baseValue = {
         common: 50,
         uncommon: 100,
@@ -108,7 +114,6 @@ export default {
         mythic: 1000
       }[randomCard.rarity];
 
-      // Calculate total stats and a bonus
       const totalStats = randomCard.stats.OFF + randomCard.stats.DEF + randomCard.stats.ABL + randomCard.stats.MCH;
       const statBonus = Math.floor(totalStats * 0.3); 
 
@@ -118,12 +123,12 @@ export default {
       });
     }
 
-    // Start transaction
+    // Database transaction
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // Batch insert cards and get their unique IDs
+      // Insert new cards
       const insertedCards = [];
       for (const card of cardsToAdd) {
         const res = await client.query(
@@ -149,7 +154,7 @@ export default {
         });
       }
 
-      // DELETE the opened packs
+      // Remove opened packs
       await client.query(
         `DELETE FROM user_packs 
          WHERE id = ANY($1::int[])`,
@@ -158,7 +163,7 @@ export default {
 
       await client.query('COMMIT');
 
-      // Create embed
+      // Build results embed
       const embed = new EmbedBuilder()
         .setColor(0x0099FF)
         .setTitle(`🎁 Opened ${quantity} ${packCheck.rows[0].pack_name}${quantity > 1 ? 's' : ''}!`)
