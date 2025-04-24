@@ -1,4 +1,9 @@
-import config from '../config.json' assert { type: 'json' };
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const config = JSON.parse(readFileSync(join(__dirname, '../config.json'), 'utf8');
 
 // Base values for different rarities
 const BASE_VALUES = {
