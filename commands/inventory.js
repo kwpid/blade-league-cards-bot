@@ -1,36 +1,17 @@
 import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from "discord.js";
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const inventoryPath = path.join(__dirname, '../data/userInventories.json');
 
 const ITEMS_PER_PAGE = 5;
-
-// Rarity colors for cards
 const RARITY_COLORS = {
-  common: 0x808080,    // Gray
-  uncommon: 0x2ecc71,  // Green
-  rare: 0x3498db,      // Blue
-  legendary: 0x9b59b6, // Purple
-  mythic: 0xf1c40f     // Gold
+  common: 0x808080,
+  uncommon: 0x2ecc71,
+  rare: 0x3498db,
+  legendary: 0x9b59b6,
+  mythic: 0xf1c40f
 };
-
-// Emoji representations for better visual distinction
 const TYPE_EMOJIS = {
   packs: "📦",
   cards: "🃏"
 };
-
-async function getInventory(userId) {
-  try {
-    const data = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
-    return data[userId] || { packs: [], cards: [] };
-  } catch {
-    return { packs: [], cards: [] };
-  }
-}
 
 export default {
   data: new SlashCommandBuilder()
@@ -50,14 +31,44 @@ export default {
         .setRequired(false)
         .setMinValue(1)),
 
-  async execute(interaction) {
+  async execute(interaction, pool) {
     const inventoryType = interaction.options.getString("type") || "packs";
     const page = interaction.options.getInteger("page") || 1;
     const userId = interaction.user.id;
-    const inventory = await getInventory(userId);
     
-    const items = inventory[inventoryType];
-    const totalItems = items.length;
+    let items, totalItems;
+    
+    if (inventoryType === "packs") {
+      const res = await pool.query(
+        'SELECT COUNT(*) FROM user_packs WHERE user_id = $1 AND opened = false',
+        [userId]
+      );
+      totalItems = parseInt(res.rows[0].count);
+      
+      const packsRes = await pool.query(
+        `SELECT * FROM user_packs 
+         WHERE user_id = $1 AND opened = false
+         ORDER BY purchase_date DESC
+         LIMIT $2 OFFSET $3`,
+        [userId, ITEMS_PER_PAGE, (page - 1) * ITEMS_PER_PAGE]
+      );
+      items = packsRes.rows;
+    } else {
+      const res = await pool.query(
+        'SELECT COUNT(*) FROM user_cards WHERE user_id = $1',
+        [userId]
+      );
+      totalItems = parseInt(res.rows[0].count);
+      
+      const cardsRes = await pool.query(
+        `SELECT * FROM user_cards 
+         WHERE user_id = $1
+         ORDER BY obtained_date DESC
+         LIMIT $2 OFFSET $3`,
+        [userId, ITEMS_PER_PAGE, (page - 1) * ITEMS_PER_PAGE]
+      );
+      items = cardsRes.rows;
+    }
     
     if (totalItems === 0) {
       return interaction.reply({
@@ -74,34 +85,28 @@ export default {
       });
     }
     
-    const startIdx = (page - 1) * ITEMS_PER_PAGE;
-    const endIdx = startIdx + ITEMS_PER_PAGE;
-    const pageItems = items.slice(startIdx, endIdx);
-    
-    // Create different embeds for packs vs cards
     const embed = new EmbedBuilder()
       .setTitle(`${TYPE_EMOJIS[inventoryType]} ${interaction.user.username}'s ${inventoryType.toUpperCase()}`)
       .setDescription(`📄 Page ${page}/${totalPages} | 📦 Total: ${totalItems}`);
 
     if (inventoryType === "packs") {
-      embed.setColor(0x3498db) // Blue for packs
+      embed.setColor(0x3498db)
         .addFields(
-          pageItems.map((item, idx) => ({
-            name: `📦 ${startIdx + idx + 1}. ${item.name}`,
+          items.map((item, idx) => ({
+            name: `📦 ${((page - 1) * ITEMS_PER_PAGE) + idx + 1}. ${item.pack_name}`,
             value: [
-              `🆔 ID: ${item.id}`,
-              `💰 Value: ${item.price || 'N/A'} stars`,
-              `\`/open ${item.id}\` to open this pack`,
-              ...(item.description ? [`📝 ${item.description}`] : [])
+              `🆔 ID: ${item.pack_id}`,
+              `💰 Value: ${item.pack_price || 'N/A'} stars`,
+              `\`/open ${item.pack_id}\` to open this pack`,
+              ...(item.pack_description ? [`📝 ${item.pack_description}`] : [])
             ].join('\n'),
             inline: false
           }))
         );
     } else {
-      // Cards embed
-      embed.setColor(RARITY_COLORS[pageItems[0]?.rarity] || 0x7289DA) // Use first card's rarity color
+      embed.setColor(RARITY_COLORS[items[0]?.rarity] || 0x7289DA)
         .addFields(
-          pageItems.map((card, idx) => {
+          items.map((card, idx) => {
             const variantEmoji = {
               normal: "",
               silver: "🥈 ",
@@ -110,13 +115,13 @@ export default {
             }[card.variant];
             
             return {
-              name: `${variantEmoji}${startIdx + idx + 1}. ${card.name}`,
+              name: `${variantEmoji}${((page - 1) * ITEMS_PER_PAGE) + idx + 1}. ${card.card_name}`,
               value: [
                 `✨ Rarity: ${card.rarity.toUpperCase()}`,
                 `⭐ Value: ${card.value} stars`,
-                `⚔️ OFF: ${card.stats.OFF} | 🛡️ DEF: ${card.stats.DEF}`,
-                `🎯 ABL: ${card.stats.ABL} | 🤖 MCH: ${card.stats.MCH}`,
-                `🆔 Card ID: ${card.cardId}`
+                `⚔️ OFF: ${card.stats_off} | 🛡️ DEF: ${card.stats_def}`,
+                `🎯 ABL: ${card.stats_abl} | 🤖 MCH: ${card.stats_mch}`,
+                `🆔 Card ID: ${card.card_id}`
               ].join('\n'),
               inline: true
             };
@@ -124,7 +129,6 @@ export default {
         );
     }
     
-    // Pagination buttons
     const row = new ActionRowBuilder();
     
     if (page > 1) {
@@ -145,9 +149,14 @@ export default {
       );
     }
     
-    // Add type switcher if there are items in both categories
     const otherType = inventoryType === "packs" ? "cards" : "packs";
-    if (inventory[otherType]?.length > 0) {
+    const otherCountRes = await pool.query(
+      `SELECT COUNT(*) FROM user_${otherType} WHERE user_id = $1`,
+      [userId]
+    );
+    const otherCount = parseInt(otherCountRes.rows[0].count);
+    
+    if (otherCount > 0) {
       row.addComponents(
         new ButtonBuilder()
           .setCustomId(`inventory_${otherType}_switch_1`)
@@ -162,5 +171,5 @@ export default {
     };
     
     await interaction.reply(replyOptions);
-  },
+  }
 };
