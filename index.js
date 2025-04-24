@@ -120,30 +120,40 @@ async function loadCommands() {
 // Register commands with Discord API (Global or Guild-based)
 async function registerCommands() {
   const commands = await loadCommands();
+
+  // Log commands to ensure they are being loaded
+  if (commands.length === 0) {
+    console.error('No commands loaded. Please check your command files.');
+  } else {
+    console.log(`Loaded ${commands.length} commands.`);
+  }
+
   try {
+    const guildId = process.env.GUILD_ID;
     if (process.env.NODE_ENV === 'production') {
       // Register commands globally (it can take up to an hour to propagate)
       await client.application.commands.set(commands);
       console.log('Commands registered globally.');
     } else {
-      // Register commands for a specific guild using the GUILD_ID from environment variables
-      const guildId = process.env.GUILD_ID;
-      if (guildId) {
-        const guild = client.guilds.cache.get(guildId);
-        if (guild) {
-          await guild.commands.set(commands);
-          console.log('Commands registered for guild.');
-        } else {
-          console.error(`Guild with ID ${guildId} not found.`);
-        }
-      } else {
+      if (!guildId) {
         console.error('GUILD_ID is not defined in the environment variables.');
+        return;
       }
+
+      const guild = client.guilds.cache.get(guildId);
+      if (!guild) {
+        console.error(`Guild with ID ${guildId} not found. Ensure the bot is in the server.`);
+        return;
+      }
+
+      await guild.commands.set(commands);
+      console.log('Commands registered for guild.');
     }
   } catch (error) {
     console.error('Error registering commands:', error);
   }
 }
+
 
 // Main bot function
 async function startBot() {
