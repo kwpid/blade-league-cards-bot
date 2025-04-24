@@ -1,49 +1,71 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { cardsData, shopData } from '../index.js';
 
-// Configuration - easily change how many cards per pack
 const CARDS_PER_PACK = 1;
 
 export default {
   data: new SlashCommandBuilder()
     .setName('open')
-    .setDescription('Open a pack from your inventory')
+    .setDescription('Open packs from your inventory')
     .addIntegerOption(option =>
       option.setName('id')
         .setDescription('The ID of the pack to open')
-        .setRequired(true)),
-        
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('quantity')
+        .setDescription('Number of packs to open (max 5)')
+        .setMinValue(1)
+        .setMaxValue(5))
+    .addStringOption(option =>
+      option.setName('rarity')
+        .setDescription('Filter by minimum rarity')
+        .addChoices(
+          { name: 'Common', value: 'common' },
+          { name: 'Uncommon', value: 'uncommon' },
+          { name: 'Rare', value: 'rare' },
+          { name: 'Legendary', value: 'legendary' },
+          { name: 'Mythic', value: 'mythic' }
+        )),
+
   async execute(interaction, pool) {
     const packId = interaction.options.getInteger('id');
+    const quantity = interaction.options.getInteger('quantity') || 1;
+    const minRarity = interaction.options.getString('rarity') || 'common';
     const userId = interaction.user.id;
 
-    // Check if user has the pack
-    const packRes = await pool.query(
+    // Check available unopened packs
+    const packsRes = await pool.query(
       `SELECT * FROM user_packs 
        WHERE user_id = $1 AND pack_id = $2 AND opened = false
-       LIMIT 1`,
-      [userId, packId]
+       LIMIT $3`,
+      [userId, packId, quantity]
     );
 
-    if (packRes.rows.length === 0) {
+    if (packsRes.rows.length === 0) {
       return interaction.reply({
-        content: "❌ You don't have an unopened pack with that ID!",
+        content: `❌ You don't have ${quantity} unopened pack(s) with ID ${packId}!`,
         flags: "Ephemeral"
       });
     }
 
-    const pack = packRes.rows[0];
-    
-    // Mark pack as opened
+    // Mark packs as opened
     await pool.query(
-      'UPDATE user_packs SET opened = true WHERE id = $1',
-      [pack.id]
+      `UPDATE user_packs 
+       SET opened = true 
+       WHERE id = ANY($1::int[])`,
+      [packsRes.rows.map(p => p.id)]
     );
 
-    // Generate cards
+    // Generate cards with rarity filter
+    const rarityTiers = ['common', 'uncommon', 'rare', 'legendary', 'mythic'];
+    const minRarityIdx = rarityTiers.indexOf(minRarity);
+    const eligibleCards = cardsData.filter(card => 
+      rarityTiers.indexOf(card.rarity) >= minRarityIdx
+    );
+
     const cardsToAdd = [];
-    for (let i = 0; i < CARDS_PER_PACK; i++) {
-      const randomCard = cardsData[Math.floor(Math.random() * cardsData.length)];
+    for (let i = 0; i < quantity * CARDS_PER_PACK; i++) {
+      const randomCard = eligibleCards[Math.floor(Math.random() * eligibleCards.length)];
       cardsToAdd.push({
         ...randomCard,
         value: {
@@ -56,41 +78,33 @@ export default {
       });
     }
 
-    // Add cards to inventory
-    for (const card of cardsToAdd) {
-      await pool.query(
-        `INSERT INTO user_cards 
-         (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [userId, card.id, card.name, card.rarity, 
-         card.stats.OFF, card.stats.DEF, card.stats.ABL, card.stats.MCH, card.value]
-      );
-    }
+    // Batch insert cards
+    const values = cardsToAdd.map(card => 
+      `($1, ${card.id}, '${card.name.replace(/'/g, "''")}', '${card.rarity}', 
+       ${card.stats.OFF}, ${card.stats.DEF}, ${card.stats.ABL}, ${card.stats.MCH}, ${card.value})`
+    ).join(',');
 
-    // Create clean embed
+    await pool.query(
+      `INSERT INTO user_cards 
+       (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
+       VALUES ${values}`,
+      [userId]
+    );
+
+    // Create embed
     const embed = new EmbedBuilder()
       .setColor(0x0099FF)
-      .setTitle(`🎁 ${pack.pack_name} - Opened!`)
-      .setDescription(`You received ${CARDS_PER_PACK} card${CARDS_PER_PACK > 1 ? 's' : ''}!`)
-      .setThumbnail('https://i.imgur.com/r3JYj4x.png') // Replace with your pack image
-      .setTimestamp();
-    
-    // Add card fields with better formatting
-    cardsToAdd.forEach((card, index) => {
+      .setTitle(`🎁 Opened ${quantity} ${packsRes.rows[0].pack_name}${quantity > 1 ? 's' : ''}!`)
+      .setDescription(`Obtained ${cardsToAdd.length} card${cardsToAdd.length > 1 ? 's' : ''} (Min rarity: ${minRarity})`)
+      .setThumbnail('https://i.imgur.com/r3JYj4x.png');
+
+    cardsToAdd.forEach((card, idx) => {
       embed.addFields({
-        name: `#${index + 1} ${card.name}`,
-        value: [
-          `✨ **Rarity:** ${card.rarity.toUpperCase()}`,
-          `⭐ **Value:** ${card.value} stars`,
-          `⚔️ OFF: ${card.stats.OFF} | 🛡️ DEF: ${card.stats.DEF}`,
-          `🎯 ABL: ${card.stats.ABL} | 🤖 MCH: ${card.stats.MCH}`
-        ].join('\n'),
+        name: `#${idx + 1} ${card.name}`,
+        value: `✨ ${card.rarity.toUpperCase()} • ⭐ ${card.value}\n⚔️${card.stats.OFF} 🛡️${card.stats.DEF} 🎯${card.stats.ABL} 🤖${card.stats.MCH}`,
         inline: true
       });
     });
-
-    // Add footer with pack ID
-    embed.setFooter({ text: `Pack ID: ${pack.id}` });
 
     await interaction.reply({ embeds: [embed] });
   }
