@@ -48,6 +48,15 @@ export default {
       });
     }
 
+    // Get pack rarity distribution
+    const packInfo = shopData.packs.find(p => p.id === packId);
+    if (!packInfo) {
+      return interaction.reply({
+        content: `❌ Invalid pack ID ${packId}!`,
+        flags: "Ephemeral"
+      });
+    }
+
     // Mark packs as opened
     await pool.query(
       `UPDATE user_packs 
@@ -56,16 +65,49 @@ export default {
       [packsRes.rows.map(p => p.id)]
     );
 
-    // Generate cards with rarity filter
+    // Generate cards with proper rarity distribution
     const rarityTiers = ['common', 'uncommon', 'rare', 'legendary', 'mythic'];
     const minRarityIdx = rarityTiers.indexOf(minRarity);
-    const eligibleCards = cardsData.filter(card => 
-      rarityTiers.indexOf(card.rarity) >= minRarityIdx
-    );
-
+    
     const cardsToAdd = [];
     for (let i = 0; i < quantity * CARDS_PER_PACK; i++) {
-      const randomCard = eligibleCards[Math.floor(Math.random() * eligibleCards.length)];
+      // Determine rarity based on pack's distribution
+      const random = Math.random() * 100;
+      let selectedRarity;
+      let cumulative = 0;
+      
+      for (const [rarity, chance] of Object.entries(packInfo.rarities)) {
+        cumulative += chance;
+        if (random <= cumulative) {
+          selectedRarity = rarity;
+          break;
+        }
+      }
+      
+      // Ensure selected rarity meets minimum requirement
+      if (rarityTiers.indexOf(selectedRarity) < minRarityIdx) {
+        selectedRarity = minRarity;
+      }
+
+      // Filter cards by selected rarity
+      const eligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
+      if (eligibleCards.length === 0) {
+        // Fallback to any card of min rarity if no cards found for selected rarity
+        const fallbackCards = cardsData.filter(card => 
+          rarityTiers.indexOf(card.rarity) >= minRarityIdx
+        );
+        if (fallbackCards.length > 0) {
+          selectedRarity = fallbackCards[0].rarity;
+        } else {
+          // If still no cards, use common as final fallback
+          selectedRarity = 'common';
+        }
+      }
+
+      // Select random card from filtered pool
+      const finalEligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
+      const randomCard = finalEligibleCards[Math.floor(Math.random() * finalEligibleCards.length)];
+      
       cardsToAdd.push({
         ...randomCard,
         value: {
@@ -94,7 +136,7 @@ export default {
     // Create embed
     const embed = new EmbedBuilder()
       .setColor(0x0099FF)
-      .setTitle(`🎁 Opened ${quantity} ${packsRes.rows[0].pack_name}${quantity > 1 ? 's' : ''}!`)
+      .setTitle(`🎁 Opened ${quantity} ${packInfo.name}${quantity > 1 ? 's' : ''}!`)
       .setDescription(`Obtained ${cardsToAdd.length} card${cardsToAdd.length > 1 ? 's' : ''} (Min rarity: ${minRarity})`)
       .setThumbnail('https://i.imgur.com/r3JYj4x.png');
 
