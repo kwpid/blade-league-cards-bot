@@ -45,13 +45,15 @@ export default {
       }
 
       // Deduct stars
-      await pool.query(
-        `INSERT INTO user_balances (user_id, balance)
-         VALUES ($1, $2)
-         ON CONFLICT (user_id) 
-         DO UPDATE SET balance = $2, last_updated = NOW()`,
-        [interaction.user.id, userBalance - pack.price]
-      );
+     const balanceRes = await pool.query(
+  `INSERT INTO user_balances (user_id, balance)
+   VALUES ($1, $2)
+   ON CONFLICT (user_id) 
+   DO UPDATE SET balance = user_balances.balance - $3
+   RETURNING balance`,
+  [interaction.user.id, 100 - pack.price, pack.price]
+);
+const newBalance = balanceRes.rows[0].balance;
       
       // Add to inventory
       await pool.query(
