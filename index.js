@@ -152,23 +152,32 @@ async function startBot() {
     client.once('ready', () => {
       console.log(`Logged in as ${client.user.tag}`);
       console.log(`Loaded ${Object.keys(commands).length} commands`);
+      
+      // Add this to verify the database structure on startup
+      verifyDatabaseStructure();
     });
 
-    // Interaction handler with command refresh capability
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
 
-      // Debug command to refresh slash commands (admin only)
+      // Debug commands
       if (interaction.commandName === 'debug-refresh') {
         if (!interaction.memberPermissions.has('Administrator')) {
           return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
         }
         try {
           await registerCommands(commands);
-          return interaction.reply({ content: '✅ Commands refreshed successfully!', ephemeral: true });
+          await verifyDatabaseStructure();
+          return interaction.reply({ 
+            content: '✅ Commands refreshed and database verified!', 
+            ephemeral: true 
+          });
         } catch (error) {
           console.error('Debug refresh failed:', error);
-          return interaction.reply({ content: '❌ Failed to refresh commands', ephemeral: true });
+          return interaction.reply({ 
+            content: `❌ Failed to refresh: ${error.message}`, 
+            ephemeral: true 
+          });
         }
       }
 
@@ -176,7 +185,6 @@ async function startBot() {
       const command = commands[interaction.commandName];
       if (!command) return;
 
-      // Restrict command use if in dev mode
       if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
         return interaction.reply({
           content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
@@ -188,25 +196,54 @@ async function startBot() {
         await command.execute(interaction, pool, { cardsData, shopData });
       } catch (error) {
         console.error(`Error executing ${interaction.commandName}:`, error);
+        const errorMessage = error.code === '42703' 
+          ? "❌ Database needs update! Use `/debug-refresh` as admin to fix."
+          : '❌ Command failed';
+        
         if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ content: '❌ Command failed', ephemeral: true });
+          await interaction.editReply({ content: errorMessage, ephemeral: true });
         } else {
-          await interaction.reply({ content: '❌ Command failed', ephemeral: true });
+          await interaction.reply({ content: errorMessage, ephemeral: true });
         }
       }
     });
 
-    // Register commands on startup
     await registerCommands(commands);
-    console.log('Commands registered with Discord API');
-    
-    // Login to Discord
+    await verifyDatabaseStructure(); // Verify DB on startup
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
 
   } catch (error) {
     console.error('Fatal error during bot startup:', error);
     process.exit(1);
+  }
+}
+
+// Add this new function to verify/update database structure
+async function verifyDatabaseStructure() {
+  const client = await pool.connect();
+  try {
+    // Check if column exists
+    const checkRes = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_name='user_balances' AND column_name='last_daily_claim'
+    `);
+
+    // Add column if it doesn't exist
+    if (checkRes.rows.length === 0) {
+      console.log('Adding missing last_daily_claim column...');
+      await client.query(`
+        ALTER TABLE user_balances 
+        ADD COLUMN last_daily_claim TIMESTAMP WITH TIME ZONE
+      `);
+      console.log('Database structure updated successfully');
+    }
+  } catch (error) {
+    console.error('Database verification failed:', error);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
