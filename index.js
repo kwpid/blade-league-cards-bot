@@ -10,6 +10,10 @@ process.on('unhandledRejection', error => {
   console.error('Unhandled promise rejection:', error);
 });
 
+console.log("Starting bot with Node.js", process.version);
+console.log("Current directory:", process.cwd());
+console.log("Files in data directory:", fs.readdirSync(path.join(__dirname, 'data')));
+
 config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -105,7 +109,9 @@ client.on("interactionCreate", async (interaction) => {
 
 client.once('ready', async () => {
   console.log(`Ready! Logged in as ${client.user.tag}`);
-  
+  console.log(`Bot ready! Logged in as ${client.user.tag}`);
+  console.log('Cards data:', cardsData.length, 'cards loaded');
+  console.log('Shop data:', shopData.packs.length, 'packs loaded');
   // Create tables if they don't exist (only for user data)
   try {
     await pool.query(`
