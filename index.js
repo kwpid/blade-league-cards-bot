@@ -35,7 +35,6 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const TEST_GUILD_ID = process.env.TEST_GUILD_ID;
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-// Initialize database
 async function initDB() {
   let retries = 5;
   while (retries > 0) {
@@ -83,6 +82,7 @@ async function initDB() {
             stats_mch INTEGER NOT NULL,
             value INTEGER NOT NULL,
             obtained_date TIMESTAMP DEFAULT NOW(),
+            tags TEXT[] DEFAULT '{}'::TEXT[],
             FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
           )
         `);
