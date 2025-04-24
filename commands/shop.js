@@ -1,10 +1,5 @@
 import { SlashCommandBuilder, EmbedBuilder } from "discord.js";
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const shopDataPath = path.join(__dirname, '../data/shopItems.json');
+import { shopData } from "../index.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -12,8 +7,6 @@ export default {
     .setDescription("View available packs in the shop"),
 
   async execute(interaction) {
-    const shopData = JSON.parse(await fs.readFile(shopDataPath, 'utf8'));
-    
     const embed = new EmbedBuilder()
       .setColor(0x00ff00)
       .setTitle("🏪 Card Pack Shop")
@@ -21,10 +14,13 @@ export default {
       .addFields(
         shopData.packs.map(pack => ({
           name: `${pack.name} (ID: ${pack.id})`,
-          value: `💰 ${pack.price} stars\n${pack.description}`
+          value: `💰 ${pack.price} stars\n${pack.description}\nRarities: ${Object.entries(pack.rarities)
+            .filter(([_, value]) => value > 0)
+            .map(([rarity, chance]) => `${rarity}: ${chance}%`)
+            .join(', ')}`
         }))
       )
-      .setFooter({ text: "Use /purchase shop <id> to buy a pack!" });
+      .setFooter({ text: "Use /purchase pack <id> to buy a pack!" });
 
     await interaction.reply({ embeds: [embed] });
   },
