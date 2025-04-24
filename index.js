@@ -34,15 +34,15 @@ async function initDB() {
         console.log('Database connection successful');
 
         // Create tables
-        await client.query(
+        await client.query(`
           CREATE TABLE IF NOT EXISTS user_balances (
             user_id VARCHAR(20) PRIMARY KEY,
             balance INTEGER NOT NULL DEFAULT 100,
             last_updated TIMESTAMP DEFAULT NOW()
           )
-        );
+        `);
         
-        await client.query(
+        await client.query(`
           CREATE TABLE IF NOT EXISTS user_packs (
             id SERIAL PRIMARY KEY,
             user_id VARCHAR(20) NOT NULL,
@@ -54,9 +54,9 @@ async function initDB() {
             opened BOOLEAN DEFAULT FALSE,
             FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
           )
-        );
+        `);
         
-        await client.query(
+        await client.query(`
           CREATE TABLE IF NOT EXISTS user_cards (
             id SERIAL PRIMARY KEY,
             user_id VARCHAR(20) NOT NULL,
@@ -72,7 +72,7 @@ async function initDB() {
             obtained_date TIMESTAMP DEFAULT NOW(),
             FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
           )
-        );
+        `);
         
         console.log('Database tables verified');
         return;
@@ -81,7 +81,7 @@ async function initDB() {
       }
     } catch (err) {
       retries--;
-      console.error(Database connection failed (${retries} retries left):, err);
+      console.error(`Database connection failed (${retries} retries left):`, err);
       if (retries === 0) {
         throw new Error('Failed to connect to database after multiple attempts');
       }
@@ -98,13 +98,13 @@ async function loadCommands() {
 
   for (const file of commandFiles) {
     try {
-      const { default: command } = await import(./commands/${file});
+      const { default: command } = await import(`./commands/${file}`);
       if (command?.data) {
         commands[command.data.name] = command;
-        console.log(Loaded command: ${command.data.name});
+        console.log(`Loaded command: ${command.data.name}`);
       }
     } catch (err) {
-      console.error(Error loading command ${file}:, err);
+      console.error(`Error loading command ${file}:`, err);
     }
   }
   return commands;
@@ -123,7 +123,7 @@ async function startBot() {
     
     // Client events
     client.once('ready', () => {
-      console.log(Logged in as ${client.user.tag});
+      console.log(`Logged in as ${client.user.tag}`);
     });
 
     client.on('interactionCreate', async interaction => {
@@ -135,7 +135,7 @@ async function startBot() {
       try {
         await command.execute(interaction, pool, { cardsData, shopData });
       } catch (error) {
-        console.error(Error executing ${interaction.commandName}:, error);
+        console.error(`Error executing ${interaction.commandName}:`, error);
         if (interaction.deferred || interaction.replied) {
           await interaction.editReply({ content: '❌ Command failed', ephemeral: true });
         } else {
