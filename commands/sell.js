@@ -51,7 +51,7 @@ export default {
         const pack = packRes.rows[0];
         const sellValue = Math.floor(pack.pack_price * 0.7);
 
-        // Delete pack and update user stars
+        // Delete pack and update user balance
         await pool.query('BEGIN');
         await pool.query(
           `DELETE FROM user_packs 
@@ -59,8 +59,8 @@ export default {
           [pack.id]
         );
         await pool.query(
-          `UPDATE users 
-           SET stars = stars + $1 
+          `UPDATE user_balances 
+           SET balance = balance + $1 
            WHERE user_id = $2`,
           [sellValue, userId]
         );
@@ -105,7 +105,7 @@ export default {
         const card = cardRes.rows[0];
         const sellValue = Math.floor(card.value * 0.7);
 
-        // Delete card and update user stars
+        // Delete card and update user balance
         await pool.query('BEGIN');
         await pool.query(
           `DELETE FROM user_cards 
@@ -113,8 +113,8 @@ export default {
           [card.id]
         );
         await pool.query(
-          `UPDATE users 
-           SET stars = stars + $1 
+          `UPDATE user_balances 
+           SET balance = balance + $1 
            WHERE user_id = $2`,
           [sellValue, userId]
         );
