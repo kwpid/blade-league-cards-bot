@@ -44,23 +44,22 @@ export default {
         .setMinValue(1)),
 
   async execute(interaction, pool) {
-    // Handle button interactions
-    if (interaction.type === InteractionType.MessageComponent) {
-      if (interaction.isButton()) {
-        return this.handleButtonInteraction(interaction, pool);
-      }
-      if (interaction.isStringSelectMenu()) {
-        return this.handleSelectMenuInteraction(interaction, pool);
-      }
-    }
+  // Handle button or select menu interactions
+  if (interaction.isButton()) {
+    return this.handleButtonInteraction(interaction, pool);
+  }
 
-    // Handle slash command
-    const type = interaction.options.getString('type') || 'cards';
-    const rarityFilter = interaction.options.getString('rarity');
-    const page = interaction.options.getInteger('page') || 1;
-    
-    await this.showInventory(interaction, pool, type, rarityFilter, page);
-  },
+  if (interaction.isStringSelectMenu()) {
+    return this.handleSelectMenuInteraction(interaction, pool);
+  }
+
+  // Handle slash command
+  const type = interaction.options.getString('type') || 'cards';
+  const rarityFilter = interaction.options.getString('rarity');
+  const page = interaction.options.getInteger('page') || 1;
+
+  await this.showInventory(interaction, pool, type, rarityFilter, page);
+},
 
   async handleButtonInteraction(interaction, pool) {
     const [_, type, rarityFilter, page] = interaction.customId.split('_');
