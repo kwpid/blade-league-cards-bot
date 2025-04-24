@@ -221,42 +221,10 @@ async function startBot() {
             await interaction.reply({ content: errorMessage, ephemeral: true });
           }
         }
-      } else if (interaction.isButton() || interaction.isStringSelectMenu()) {
-        // Handle button and select menu interactions
+      } else if (interaction.isStringSelectMenu()) {
+        // Handle only select menu interactions (for rarity filter)
         try {
-          if (interaction.customId.startsWith('inv_')) // Replace this part in index.js (around line 256):
-if (interaction.customId.startsWith('inv_')) {
-    // Handle inventory pagination
-    const [_, type, rarityFilter, page] = interaction.customId.split('_');
-    const inventoryCommand = commands['inventory'];
-    
-    if (!inventoryCommand) {
-        throw new Error('Inventory command not found');
-    }
-
-    // Create a proper interaction object that maintains all methods
-    const modifiedInteraction = {
-        ...interaction,
-        isButton: () => true,
-        isStringSelectMenu: () => false,
-        options: {
-            getString: (name) => {
-                if (name === 'type') return type;
-                if (name === 'rarity') return rarityFilter === 'all' ? null : rarityFilter;
-                return null;
-            },
-            getInteger: (name) => {
-                if (name === 'page') return parseInt(page);
-                return null;
-            }
-        },
-        user: interaction.user
-    };
-
-    await inventoryCommand.execute(modifiedInteraction, pool, { cardsData, shopData });
-    await interaction.deferUpdate();
-} else if (interaction.customId === 'inventory_filter') {
-            // Handle rarity filter selection
+          if (interaction.customId === 'inventory_filter') {
             const type = interaction.message.embeds[0].title.includes('Packs') ? 'packs' : 'cards';
             const inventoryCommand = commands['inventory'];
             
@@ -272,7 +240,7 @@ if (interaction.customId.startsWith('inv_')) {
                 return null;
               },
               getInteger: (name) => {
-                if (name === 'page') return 1;
+                if (name === 'page') return 1; // Always reset to page 1 when filtering
                 return null;
               }
             };
@@ -286,11 +254,11 @@ if (interaction.customId.startsWith('inv_')) {
             await interaction.deferUpdate();
           }
         } catch (error) {
-          console.error('Error handling button interaction:', error);
+          console.error('Error handling select menu interaction:', error);
           if (interaction.deferred || interaction.replied) {
-            await interaction.editReply({ content: '❌ Interaction failed', ephemeral: true });
+            await interaction.editReply({ content: '❌ Filter operation failed', ephemeral: true });
           } else {
-            await interaction.reply({ content: '❌ Interaction failed', ephemeral: true });
+            await interaction.reply({ content: '❌ Filter operation failed', ephemeral: true });
           }
         }
       }
