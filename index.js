@@ -11,6 +11,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load config.json
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
+// Module-level commands array
+let commands = [];
+
 // Log Dev Mode status
 console.log(`🧪 Dev Mode is ${config.devMode ? 'ENABLED (Admin-only)' : 'DISABLED (Public)'}`);
 
@@ -99,7 +102,7 @@ async function initDB() {
 
 // Load commands dynamically from the commands directory
 async function loadCommands() {
-  const commands = [];
+  commands = []; // Reset the commands array
   const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
     .filter(file => file.endsWith('.js'));
 
@@ -119,8 +122,9 @@ async function loadCommands() {
 
 // Register commands with Discord API (Global or Guild-based)
 async function registerCommands() {
-  const commands = await loadCommands();
+  await loadCommands();
 
+  // Log commands to ensure they are being loaded
   if (commands.length === 0) {
     console.error('No commands loaded. Please check your command files.');
   } else {
@@ -130,6 +134,7 @@ async function registerCommands() {
   try {
     const guildId = process.env.GUILD_ID;
     if (process.env.NODE_ENV === 'production') {
+      // Register commands globally (it can take up to an hour to propagate)
       await client.application.commands.set(commands);
       console.log('Commands registered globally.');
     } else {
@@ -138,6 +143,7 @@ async function registerCommands() {
         return;
       }
 
+      // Log the guild IDs the bot has access to
       console.log('Guilds the bot has access to:', client.guilds.cache.map(guild => guild.id));
 
       const guild = client.guilds.cache.get(guildId);
@@ -159,29 +165,38 @@ async function startBot() {
   try {
     console.log('Starting bot initialization...');
     await initDB();
+    await registerCommands();
 
-    client.once('ready', async () => {
+    client.once('ready', () => {
       console.log(`Logged in as ${client.user.tag}`);
-      await registerCommands(); // ✅ Register commands after login
     });
 
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
 
-      const command = commands.find(cmd => cmd.data.name === interaction.commandName);
-      if (!command) return;
-
-      if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
-        return interaction.reply({
-          content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
-          ephemeral: true
-        });
+      const commandName = interaction.commandName;
+      const commandFile = commands.find(cmd => cmd.name === commandName);
+      
+      if (!commandFile) {
+        console.error(`Command ${commandName} not found in commands collection`);
+        return;
       }
 
       try {
+        // Dynamically import the command file
+        const { default: command } = await import(`./commands/${commandName}.js`);
+        
+        // Restrict command use if in dev mode
+        if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
+          return interaction.reply({
+            content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
+            ephemeral: true
+          });
+        }
+
         await command.execute(interaction, pool, { cardsData, shopData });
       } catch (error) {
-        console.error(`Error executing ${interaction.commandName}:`, error);
+        console.error(`Error executing ${commandName}:`, error);
         if (interaction.deferred || interaction.replied) {
           await interaction.editReply({ content: '❌ Command failed', ephemeral: true });
         } else {
