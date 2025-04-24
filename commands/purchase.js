@@ -26,46 +26,64 @@ export default {
       if (!pack) {
         return interaction.reply({ 
           content: "❌ Invalid pack ID! Use /shop to see available packs.", 
-          ephemeral: true 
+          flags: "Ephemeral"
         });
       }
 
-      // Get or create user balance
-      const balanceRes = await pool.query(
-        'SELECT balance FROM user_balances WHERE user_id = $1',
-        [interaction.user.id]
-      );
-      const userBalance = balanceRes.rows[0]?.balance || 100;
-      
-      if (userBalance < pack.price) {
-        return interaction.reply({ 
-          content: `❌ You don't have enough stars! You need ${pack.price} stars but have ${userBalance} stars.`, 
-          ephemeral: true 
-        });
-      }
+      // Get user balance in a transaction
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        
+        // Get current balance
+        const balanceResult = await client.query(
+          'SELECT balance FROM user_balances WHERE user_id = $1 FOR UPDATE',
+          [interaction.user.id]
+        );
+        
+        const currentBalance = balanceResult.rows[0]?.balance || 100;
+        
+        if (currentBalance < pack.price) {
+          await interaction.reply({ 
+            content: `❌ You don't have enough stars! You need ${pack.price} stars but have ${currentBalance} stars.`, 
+            flags: "Ephemeral"
+          });
+          await client.query('ROLLBACK');
+          return;
+        }
 
-      // Deduct stars
-     const balanceRes = await pool.query(
-  `INSERT INTO user_balances (user_id, balance)
-   VALUES ($1, $2)
-   ON CONFLICT (user_id) 
-   DO UPDATE SET balance = user_balances.balance - $3
-   RETURNING balance`,
-  [interaction.user.id, 100 - pack.price, pack.price]
-);
-const newBalance = balanceRes.rows[0].balance;
-      
-      // Add to inventory
-      await pool.query(
-        `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [interaction.user.id, pack.id, pack.name, pack.description, pack.price]
-      );
-      
-      await interaction.reply({
-        content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${userBalance - pack.price} stars.`,
-        ephemeral: true
-      });
+        // Deduct stars
+        await client.query(
+          `INSERT INTO user_balances (user_id, balance)
+           VALUES ($1, $2)
+           ON CONFLICT (user_id) 
+           DO UPDATE SET balance = EXCLUDED.balance - $3`,
+          [interaction.user.id, currentBalance, pack.price]
+        );
+        
+        // Add to inventory
+        await client.query(
+          `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [interaction.user.id, pack.id, pack.name, pack.description, pack.price]
+        );
+        
+        await client.query('COMMIT');
+        
+        await interaction.reply({
+          content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${currentBalance - pack.price} stars.`,
+          flags: "Ephemeral"
+        });
+      } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Purchase error:', error);
+        await interaction.reply({
+          content: "❌ An error occurred during your purchase. Please try again.",
+          flags: "Ephemeral"
+        });
+      } finally {
+        client.release();
+      }
     }
   }
 };
