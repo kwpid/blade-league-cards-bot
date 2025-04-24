@@ -84,7 +84,7 @@ export default {
         .setColor(RARITY_COLORS[rarityFilter] || 0x7289DA)
         .setTitle(`${type === 'packs' ? '📦' : '🃏'} ${interaction.user.username}'s ${type.charAt(0).toUpperCase() + type.slice(1)}`)
         .setFooter({
-          text: `Page ${page}/${totalPages} • ${totalCount} ${type}${rarityFilter !== 'all' ? ` (${rarityFilter})` : ''} • Try "/page [number]" or "/filter [filter]"`
+          text: `Page ${page}/${totalPages} • ${totalCount} ${type}${rarityFilter !== 'all' ? ` (${rarityFilter})` : ''} • Try "/inventory page [number]" or "/inventory rarity [filter]"`
         });
 
       if (items.length === 0) {
