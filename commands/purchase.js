@@ -1,6 +1,6 @@
 import { SlashCommandBuilder } from "discord.js";
 import { MessageFlags } from "discord-api-types/v10";
-import { shopData } from "../index.js";
+import { shopData, calculatePackPrice } from "../index.js";
 
 export default {
   data: new SlashCommandBuilder()
@@ -17,7 +17,7 @@ export default {
         .setRequired(true)
         .setMinValue(1)),
 
-  async execute(interaction, pool) {
+  async execute(interaction, pool, { shopData, calculatePackPrice }) {
     const type = interaction.options.getString("type");
     const id = interaction.options.getInteger("id");
     
@@ -31,10 +31,15 @@ export default {
         });
       }
 
+      // Calculate dynamic price
+      const dynamicPrice = calculatePackPrice(pack, shopData.cards);
+      const limitedPacks = [101]; // IDs of limited packs
+
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
         
+        // Check user balance
         const { rows } = await client.query(
           `INSERT INTO user_balances (user_id, balance)
            VALUES ($1, 100)
@@ -46,32 +51,41 @@ export default {
         
         const currentBalance = rows[0].balance;
         
-        if (currentBalance < pack.price) {
+        if (currentBalance < dynamicPrice) {
           await interaction.reply({ 
-            content: `❌ You don't have enough stars! You need ${pack.price} stars but have ${currentBalance} stars.`, 
+            content: `❌ You don't have enough stars! You need ⭐ ${dynamicPrice} but have ⭐ ${currentBalance}.`, 
             flags: MessageFlags.Ephemeral
           });
           await client.query('ROLLBACK');
           return;
         }
 
+        // Deduct balance
         await client.query(
           `UPDATE user_balances 
            SET balance = balance - $1
            WHERE user_id = $2`,
-          [pack.price, interaction.user.id]
+          [dynamicPrice, interaction.user.id]
         );
         
+        // Add pack to inventory
         await client.query(
-          `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [interaction.user.id, pack.id, pack.name, pack.description, pack.price]
+          `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price, is_limited)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            interaction.user.id, 
+            pack.id, 
+            pack.name, 
+            pack.description, 
+            dynamicPrice,
+            limitedPacks.includes(pack.id)
+          ]
         );
         
         await client.query('COMMIT');
         
         await interaction.reply({
-          content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${currentBalance - pack.price} stars.`,
+          content: `✅ Successfully purchased **${pack.name}** for ⭐ ${dynamicPrice}!\nYour new balance is ⭐ ${currentBalance - dynamicPrice}.`,
           flags: MessageFlags.Ephemeral
         });
       } catch (error) {
