@@ -1,48 +1,4 @@
 import { SlashCommandBuilder } from "discord.js";
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataPath = path.join(__dirname, '../data/userBalances.json');
-const shopDataPath = path.join(__dirname, '../data/shopItems.json');
-const inventoryPath = path.join(__dirname, '../data/userInventories.json');
-
-async function getBalance(userId) {
-  const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
-  return data[userId] || 100;
-}
-
-async function setBalance(userId, amount) {
-  const data = JSON.parse(await fs.readFile(dataPath, 'utf8'));
-  data[userId] = amount;
-  await fs.writeFile(dataPath, JSON.stringify(data, null, 2));
-}
-
-async function addToInventory(userId, item) {
-  let inventories = {};
-  try {
-    inventories = JSON.parse(await fs.readFile(inventoryPath, 'utf8'));
-  } catch {
-    inventories = {};
-  }
-  
-  if (!inventories[userId]) {
-    inventories[userId] = { packs: [], cards: [] };
-  }
-  
-  // Get full pack details from shop
-  const shopData = JSON.parse(await fs.readFile(shopDataPath, 'utf8'));
-  const fullPack = shopData.packs.find(p => p.id === item.id);
-  
-  inventories[userId].packs.push({
-    ...item,
-    ...fullPack, // Include all pack details
-    purchaseDate: new Date().toISOString()
-  });
-  
-  await fs.writeFile(inventoryPath, JSON.stringify(inventories, null, 2));
-}
 
 export default {
   data: new SlashCommandBuilder()
@@ -59,22 +15,31 @@ export default {
         .setRequired(true)
         .setMinValue(1)),
 
-  async execute(interaction) {
+  async execute(interaction, pool) {
     const type = interaction.options.getString("type");
     const id = interaction.options.getInteger("id");
     
     if (type === "shop") {
-      const shopData = JSON.parse(await fs.readFile(shopDataPath, 'utf8'));
-      const pack = shopData.packs.find(p => p.id === id);
+      const packRes = await pool.query(
+        'SELECT * FROM shop_items WHERE id = $1 AND item_type = "pack"',
+        [id]
+      );
+      
+      const pack = packRes.rows[0];
       
       if (!pack) {
         return interaction.reply({ 
-          content: "❌ Invalid pack ID! Use `/shop` to see available packs.", 
+          content: "❌ Invalid pack ID! Use /shop to see available packs.", 
           ephemeral: true 
         });
       }
 
-      const userBalance = await getBalance(interaction.user.id);
+      // Get or create user balance
+      const balanceRes = await pool.query(
+        'SELECT balance FROM user_balances WHERE user_id = $1',
+        [interaction.user.id]
+      );
+      const userBalance = balanceRes.rows[0]?.balance || 100;
       
       if (userBalance < pack.price) {
         return interaction.reply({ 
@@ -83,20 +48,26 @@ export default {
         });
       }
 
-      // Deduct stars and complete purchase
-      await setBalance(interaction.user.id, userBalance - pack.price);
+      // Deduct stars
+      await pool.query(
+        `INSERT INTO user_balances (user_id, balance)
+         VALUES ($1, $2)
+         ON CONFLICT (user_id) 
+         DO UPDATE SET balance = $2, last_updated = NOW()`,
+        [interaction.user.id, userBalance - pack.price]
+      );
       
       // Add to inventory
-      await addToInventory(interaction.user.id, {
-        id: pack.id,
-        type: "pack",
-        name: pack.name
-      });
+      await pool.query(
+        `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [interaction.user.id, pack.id, pack.name, pack.description, pack.price]
+      );
       
       await interaction.reply({
         content: `✅ Successfully purchased **${pack.name}** for ⭐ ${pack.price} stars!\nYour new balance is ⭐ ${userBalance - pack.price} stars.`,
         ephemeral: true
       });
     }
-  },
+  }
 };
