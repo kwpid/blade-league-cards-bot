@@ -49,10 +49,12 @@ async function initDB() {
           CREATE TABLE IF NOT EXISTS user_balances (
             user_id VARCHAR(20) PRIMARY KEY,
             balance INTEGER NOT NULL DEFAULT 100,
-            last_updated TIMESTAMP DEFAULT NOW()
+            last_updated TIMESTAMP DEFAULT NOW(),
+            last_daily_claim TIMESTAMP WITH TIME ZONE
           )
         `);
 
+        // Rest of your table creation queries...
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_packs (
             id SERIAL PRIMARY KEY,
