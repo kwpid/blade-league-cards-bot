@@ -6,6 +6,7 @@ import { Pool } from 'pg';
 import 'dotenv/config';
 import { calculateCardValue, calculatePackPrice } from './utils/economy.js';
 
+
 // Setup __dirname for ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -279,13 +280,13 @@ async function startBot() {
         }
 
         try {
-          await command.execute(interaction, pool, { 
-            cardsData, 
-            shopData,
-            calculateCardValue,
-            calculatePackPrice,
-            config
-          });
+await command.execute(interaction, pool, { 
+    cardsData, 
+    shopData,
+    calculateCardValue,
+    calculatePackPrice,
+    config
+  });
         } catch (error) {
           console.error(`❌ Error executing ${interaction.commandName}:`, error);
           const errorMessage = error.code === '42703' 
