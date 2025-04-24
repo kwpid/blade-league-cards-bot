@@ -40,6 +40,7 @@ async function initDB() {
         await client.query('SELECT NOW()');
         console.log('Database connection successful');
 
+        // Ensure necessary tables are created
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_balances (
             user_id VARCHAR(20) PRIMARY KEY,
@@ -47,7 +48,7 @@ async function initDB() {
             last_updated TIMESTAMP DEFAULT NOW()
           )
         `);
-
+        
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_packs (
             id SERIAL PRIMARY KEY,
@@ -96,9 +97,9 @@ async function initDB() {
   }
 }
 
-// Load commands
+// Load commands dynamically from the commands directory
 async function loadCommands() {
-  const commands = {};
+  const commands = [];
   const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
     .filter(file => file.endsWith('.js'));
 
@@ -106,7 +107,7 @@ async function loadCommands() {
     try {
       const { default: command } = await import(`./commands/${file}`);
       if (command?.data) {
-        commands[command.data.name] = command;
+        commands.push(command.data.toJSON());
         console.log(`Loaded command: ${command.data.name}`);
       }
     } catch (err) {
@@ -116,12 +117,40 @@ async function loadCommands() {
   return commands;
 }
 
+// Register commands with Discord API (Global or Guild-based)
+async function registerCommands() {
+  const commands = await loadCommands();
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      // Register commands globally (it can take up to an hour to propagate)
+      await client.application.commands.set(commands);
+      console.log('Commands registered globally.');
+    } else {
+      // Register commands for a specific guild using the GUILD_ID from environment variables
+      const guildId = process.env.GUILD_ID;
+      if (guildId) {
+        const guild = client.guilds.cache.get(guildId);
+        if (guild) {
+          await guild.commands.set(commands);
+          console.log('Commands registered for guild.');
+        } else {
+          console.error(`Guild with ID ${guildId} not found.`);
+        }
+      } else {
+        console.error('GUILD_ID is not defined in the environment variables.');
+      }
+    }
+  } catch (error) {
+    console.error('Error registering commands:', error);
+  }
+}
+
 // Main bot function
 async function startBot() {
   try {
     console.log('Starting bot initialization...');
     await initDB();
-    const commands = await loadCommands();
+    await registerCommands();
 
     client.once('ready', () => {
       console.log(`Logged in as ${client.user.tag}`);
@@ -130,7 +159,7 @@ async function startBot() {
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
 
-      const command = commands[interaction.commandName];
+      const command = commands.find(cmd => cmd.data.name === interaction.commandName);
       if (!command) return;
 
       // Restrict command use if in dev mode
