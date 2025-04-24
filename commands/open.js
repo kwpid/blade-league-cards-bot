@@ -1,167 +1,242 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
-import { cardsData, shopData } from '../index.js';
-
-const CARDS_PER_PACK = 1;
 
 export default {
   data: new SlashCommandBuilder()
-    .setName('open')
-    .setDescription('Open packs from your inventory')
-    .addIntegerOption(option =>
+    .setName('sell')
+    .setDescription('Sell items from your inventory')
+    .addStringOption(option =>
+      option.setName('type')
+        .setDescription('Item type to sell')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Pack', value: 'pack' },
+          { name: 'Card', value: 'card' }
+        ))
+    .addStringOption(option =>
       option.setName('id')
-        .setDescription('The ID of the pack to open')
-        .setRequired(true))
-    .addIntegerOption(option =>
-      option.setName('quantity')
-        .setDescription('Number of packs to open (max 5)')
-        .setMinValue(1)
-        .setMaxValue(5))
+        .setDescription('ID of the item to sell (pack_id or card_id:unique_id)'))
     .addStringOption(option =>
       option.setName('rarity')
-        .setDescription('Filter by minimum rarity')
+        .setDescription('Minimum rarity when selling cards')
         .addChoices(
           { name: 'Common', value: 'common' },
           { name: 'Uncommon', value: 'uncommon' },
           { name: 'Rare', value: 'rare' },
           { name: 'Legendary', value: 'legendary' },
           { name: 'Mythic', value: 'mythic' }
-        )),
+        ))
+    .addIntegerOption(option =>
+      option.setName('quantity')
+        .setDescription('Number of cards to sell (when using rarity filter)')
+        .setMinValue(1)),
 
   async execute(interaction, pool) {
-    const packId = interaction.options.getInteger('id');
-    const quantity = interaction.options.getInteger('quantity') || 1;
-    const minRarity = interaction.options.getString('rarity') || 'common';
+    const type = interaction.options.getString('type');
+    const idInput = interaction.options.getString('id');
+    const minRarity = interaction.options.getString('rarity');
+    const quantity = interaction.options.getInteger('quantity');
     const userId = interaction.user.id;
 
-    // Check available unopened packs
-    const packsRes = await pool.query(
-      `SELECT * FROM user_packs 
-       WHERE user_id = $1 AND pack_id = $2 AND opened = false
-       LIMIT $3`,
-      [userId, packId, quantity]
-    );
-
-    if (packsRes.rows.length === 0) {
-      return interaction.reply({
-        content: `❌ You don't have ${quantity} unopened pack(s) with ID ${packId}!`,
-        flags: "Ephemeral"
-      });
-    }
-
-    // Get pack rarity distribution
-    const packInfo = shopData.packs.find(p => p.id === packId);
-    if (!packInfo) {
-      return interaction.reply({
-        content: `❌ Invalid pack ID ${packId}!`,
-        flags: "Ephemeral"
-      });
-    }
-
-    // Mark packs as opened
-    await pool.query(
-      `UPDATE user_packs 
-       SET opened = true 
-       WHERE id = ANY($1::int[])`,
-      [packsRes.rows.map(p => p.id)]
-    );
-
-    // Generate cards with proper rarity distribution
-    const rarityTiers = ['common', 'uncommon', 'rare', 'legendary', 'mythic'];
-    const minRarityIdx = rarityTiers.indexOf(minRarity);
-    
-    const cardsToAdd = [];
-    for (let i = 0; i < quantity * CARDS_PER_PACK; i++) {
-      // Determine rarity based on pack's distribution
-      const random = Math.random() * 100;
-      let selectedRarity;
-      let cumulative = 0;
-      
-      for (const [rarity, chance] of Object.entries(packInfo.rarities)) {
-        cumulative += chance;
-        if (random <= cumulative) {
-          selectedRarity = rarity;
-          break;
+    try {
+      if (type === 'pack') {
+        // Handle pack selling (unchanged from previous version)
+        if (!idInput) {
+          return interaction.reply({
+            content: '❌ Please provide a pack ID to sell!',
+            ephemeral: true
+          });
         }
-      }
-      
-      // Ensure selected rarity meets minimum requirement
-      if (rarityTiers.indexOf(selectedRarity) < minRarityIdx) {
-        selectedRarity = minRarity;
-      }
 
-      // Filter cards by selected rarity
-      const eligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
-      if (eligibleCards.length === 0) {
-        // Fallback to any card of min rarity if no cards found for selected rarity
-        const fallbackCards = cardsData.filter(card => 
-          rarityTiers.indexOf(card.rarity) >= minRarityIdx
+        const packId = parseInt(idInput);
+        if (isNaN(packId)) {
+          return interaction.reply({
+            content: '❌ Invalid pack ID! Please provide a number.',
+            ephemeral: true
+          });
+        }
+
+        const packRes = await pool.query(
+          `SELECT * FROM user_packs 
+           WHERE user_id = $1 AND pack_id = $2 AND opened = false 
+           LIMIT 1`,
+          [userId, packId]
         );
-        if (fallbackCards.length > 0) {
-          selectedRarity = fallbackCards[0].rarity;
+
+        if (packRes.rows.length === 0) {
+          return interaction.reply({
+            content: `❌ You don't have an unopened pack with ID ${packId}!`,
+            ephemeral: true
+          });
+        }
+
+        const pack = packRes.rows[0];
+        const sellValue = Math.floor(pack.pack_price * 0.7);
+
+        await pool.query('BEGIN');
+        await pool.query(
+          `DELETE FROM user_packs 
+           WHERE id = $1`,
+          [pack.id]
+        );
+        await pool.query(
+          `UPDATE user_balances 
+           SET balance = balance + $1 
+           WHERE user_id = $2`,
+          [sellValue, userId]
+        );
+        await pool.query('COMMIT');
+
+        const embed = new EmbedBuilder()
+          .setColor(0x00FF00)
+          .setTitle('📦 Pack Sold')
+          .setDescription(`You sold **${pack.pack_name}** for **${sellValue}** stars (70% of original value)`)
+          .addFields(
+            { name: 'Pack ID', value: pack.pack_id.toString(), inline: true },
+            { name: 'Original Value', value: `${pack.pack_price} stars`, inline: true }
+          );
+
+        return interaction.reply({ embeds: [embed] });
+
+      } else if (type === 'card') {
+        // Handle card selling with new rarity filter option
+        if (minRarity) {
+          // Sell multiple cards by rarity
+          if (!quantity) {
+            return interaction.reply({
+              content: '❌ Please specify quantity when selling by rarity!',
+              ephemeral: true
+            });
+          }
+
+          const rarityTiers = ['common', 'uncommon', 'rare', 'legendary', 'mythic'];
+          const minRarityIdx = rarityTiers.indexOf(minRarity);
+
+          // Get cards that meet the minimum rarity
+          const cardsRes = await pool.query(
+            `SELECT * FROM user_cards 
+             WHERE user_id = $1 AND 
+             CASE $2 
+               WHEN 'common' THEN true
+               WHEN 'uncommon' THEN rarity IN ('uncommon', 'rare', 'legendary', 'mythic')
+               WHEN 'rare' THEN rarity IN ('rare', 'legendary', 'mythic')
+               WHEN 'legendary' THEN rarity IN ('legendary', 'mythic')
+               WHEN 'mythic' THEN rarity = 'mythic'
+             END
+             LIMIT $3`,
+            [userId, minRarity, quantity]
+          );
+
+          if (cardsRes.rows.length === 0) {
+            return interaction.reply({
+              content: `❌ You don't have any ${minRarity}+ rarity cards to sell!`,
+              ephemeral: true
+            });
+          }
+
+          if (cardsRes.rows.length < quantity) {
+            return interaction.reply({
+              content: `❌ You only have ${cardsRes.rows.length} ${minRarity}+ rarity cards (requested ${quantity})!`,
+              ephemeral: true
+            });
+          }
+
+          const cardsToSell = cardsRes.rows.slice(0, quantity);
+          const totalValue = cardsToSell.reduce((sum, card) => sum + Math.floor(card.value * 0.7), 0);
+
+          await pool.query('BEGIN');
+          await pool.query(
+            `DELETE FROM user_cards 
+             WHERE id = ANY($1::int[])`,
+            [cardsToSell.map(card => card.id)]
+          );
+          await pool.query(
+            `UPDATE user_balances 
+             SET balance = balance + $1 
+             WHERE user_id = $2`,
+            [totalValue, userId]
+          );
+          await pool.query('COMMIT');
+
+          const embed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('🃏 Cards Sold')
+            .setDescription(`Sold ${quantity} ${minRarity}+ rarity cards for **${totalValue}** stars (70% of total value)`)
+            .addFields(
+              { name: 'Cards Sold', value: quantity.toString(), inline: true },
+              { name: 'Minimum Rarity', value: minRarity, inline: true },
+              { name: 'Average Value', value: `${Math.floor(totalValue/quantity)} stars per card`, inline: true }
+            );
+
+          return interaction.reply({ embeds: [embed] });
+
         } else {
-          // If still no cards, use common as final fallback
-          selectedRarity = 'common';
+          // Sell single card by ID (original functionality)
+          if (!idInput) {
+            return interaction.reply({
+              content: '❌ Please provide a card ID to sell!',
+              ephemeral: true
+            });
+          }
+
+          const [cardId, uniqueId] = idInput.split(':').map(part => part.trim());
+          
+          if (!cardId || !uniqueId) {
+            return interaction.reply({
+              content: '❌ Invalid card ID format! Use `card_id:unique_id` (e.g., 123:001)',
+              ephemeral: true
+            });
+          }
+
+          const cardRes = await pool.query(
+            `SELECT * FROM user_cards 
+             WHERE user_id = $1 AND card_id = $2 AND id = $3`,
+            [userId, parseInt(cardId), parseInt(uniqueId)]
+          );
+
+          if (cardRes.rows.length === 0) {
+            return interaction.reply({
+              content: `❌ You don't have this card (${idInput}) in your inventory!`,
+              ephemeral: true
+            });
+          }
+
+          const card = cardRes.rows[0];
+          const sellValue = Math.floor(card.value * 0.7);
+
+          await pool.query('BEGIN');
+          await pool.query(
+            `DELETE FROM user_cards 
+             WHERE id = $1`,
+            [card.id]
+          );
+          await pool.query(
+            `UPDATE user_balances 
+             SET balance = balance + $1 
+             WHERE user_id = $2`,
+            [sellValue, userId]
+          );
+          await pool.query('COMMIT');
+
+          const embed = new EmbedBuilder()
+            .setColor(0x00FF00)
+            .setTitle('🃏 Card Sold')
+            .setDescription(`You sold **${card.card_name}** for **${sellValue}** stars (70% of original value)`)
+            .addFields(
+              { name: 'Card ID', value: `${card.card_id}:${card.id.toString().padStart(3, '0')}`, inline: true },
+              { name: 'Rarity', value: card.rarity, inline: true },
+              { name: 'Original Value', value: `${card.value} stars`, inline: true }
+            );
+
+          return interaction.reply({ embeds: [embed] });
         }
       }
-
-      // Select random card from filtered pool
-      const finalEligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
-      const randomCard = finalEligibleCards[Math.floor(Math.random() * finalEligibleCards.length)];
-      
-      cardsToAdd.push({
-        ...randomCard,
-        value: {
-          common: 50,
-          uncommon: 100,
-          rare: 250,
-          legendary: 500,
-          mythic: 1000
-        }[randomCard.rarity]
+    } catch (error) {
+      await pool.query('ROLLBACK');
+      console.error('Error in sell command:', error);
+      return interaction.reply({
+        content: '❌ An error occurred while processing your sale!',
+        ephemeral: true
       });
     }
-
-    // Batch insert cards and get their unique IDs
-    const insertedCards = [];
-    for (const card of cardsToAdd) {
-      const res = await pool.query(
-        `INSERT INTO user_cards 
-         (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING id`,
-        [
-          userId, 
-          card.id, 
-          card.name, 
-          card.rarity, 
-          card.stats.OFF, 
-          card.stats.DEF, 
-          card.stats.ABL, 
-          card.stats.MCH, 
-          card.value
-        ]
-      );
-      insertedCards.push({
-        ...card,
-        unique_id: res.rows[0].id
-      });
-    }
-
-    // Create embed
-    const embed = new EmbedBuilder()
-      .setColor(0x0099FF)
-      .setTitle(`🎁 Opened ${quantity} ${packInfo.name}${quantity > 1 ? 's' : ''}!`)
-      .setDescription(`Obtained ${insertedCards.length} card${insertedCards.length > 1 ? 's' : ''} (Min rarity: ${minRarity})`)
-      .setThumbnail('https://i.imgur.com/r3JYj4x.png');
-
-    insertedCards.forEach((card, idx) => {
-      const uniqueId = `${card.id}:${card.unique_id.toString().padStart(3, '0')}`;
-      embed.addFields({
-        name: `#${idx + 1} ${card.name} (${uniqueId})`,
-        value: `✨ ${card.rarity.toUpperCase()} • ⭐ ${card.value}\n⚔️${card.stats.OFF} 🛡️${card.stats.DEF} 🎯${card.stats.ABL} 🤖${card.stats.MCH}`,
-        inline: true
-      });
-    });
-
-    await interaction.reply({ embeds: [embed] });
   }
 };
