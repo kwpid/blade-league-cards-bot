@@ -5,28 +5,41 @@ import { config } from "dotenv";
 import { REST, Routes } from "discord.js";
 import { Pool } from "pg";
 import { fileURLToPath } from 'url';
+import http from 'http';
+
+// Get __dirname equivalent in ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 process.on('unhandledRejection', error => {
   console.error('Unhandled promise rejection:', error);
 });
 
+// Debug logging
 console.log("Starting bot with Node.js", process.version);
-console.log("Current directory:", process.cwd());
-console.log("Files in data directory:", fs.readdirSync(path.join(__dirname, 'data')));
+console.log("Current directory:", __dirname);
+
+// Verify data files exist
+try {
+  console.log("Files in data directory:", fs.readdirSync(path.join(__dirname, 'data')));
+  
+  // Load card and shop data
+  const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8'));
+  const shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
+  
+  console.log('Cards data loaded:', cardsData.length, 'cards');
+  console.log('Shop data loaded:', shopData.packs.length, 'packs');
+} catch (err) {
+  console.error('Failed to load data files:', err);
+  process.exit(1);
+}
 
 config();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Load card and shop data from JSON files
-const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8'));
-const shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 client.commands = new Collection();
 
-// PostgreSQL Pool Setup (only for user data)
+// PostgreSQL Pool Setup
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://postgres:imLZWLusyTSipUOnZsAFRadaYsoHcPyl@metro.proxy.rlwy.net:30227/railway',
   ssl: {
@@ -34,10 +47,19 @@ const pool = new Pool({
   }
 });
 
-// Test the connection
-pool.connect()
-  .then(() => console.log("Connected to PostgreSQL!"))
-  .catch(err => console.error("Connection error", err.stack));
+// Enhanced error handling
+pool.on('error', (err) => {
+  console.error('Unexpected database error:', err);
+});
+
+// Test connection
+try {
+  const res = await pool.query('SELECT NOW()');
+  console.log('Database connection successful:', res.rows[0].now);
+} catch (err) {
+  console.error('Database connection failed:', err);
+  process.exit(1);
+}
 
 // Read commands from ./commands/
 const commands = [];
@@ -82,37 +104,37 @@ client.on("interactionCreate", async (interaction) => {
   if (!command) return;
 
   try {
-    // Defer the reply first to avoid timeout
+    // Defer reply immediately to prevent timeout
     await interaction.deferReply({ ephemeral: true });
     
-    // Then execute the command
-    await command.execute(interaction, pool);
+    // Execute command with timeout
+    await Promise.race([
+      command.execute(interaction, pool),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Command timeout')), 10000)
+      )
+    ]);
   } catch (error) {
-    console.error(`Error executing ${interaction.commandName}`, error);
-    try {
-      if (interaction.deferred || interaction.replied) {
-        await interaction.followUp({ 
-          content: "❌ An error occurred while executing this command!", 
-          ephemeral: true 
-        });
-      } else {
-        await interaction.reply({ 
-          content: "❌ An error occurred while executing this command!", 
-          ephemeral: true 
-        });
-      }
-    } catch (err) {
-      console.error('Failed to send error message:', err);
+    console.error(`Error executing ${interaction.commandName}:`, error);
+    
+    const content = error.message.includes('timeout') 
+      ? "⌛ Command timed out. Please try again."
+      : "❌ An error occurred while executing this command!";
+    
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ content });
+    } else {
+      await interaction.reply({ content, ephemeral: true });
     }
   }
 });
 
 client.once('ready', async () => {
   console.log(`Ready! Logged in as ${client.user.tag}`);
-  console.log(`Bot ready! Logged in as ${client.user.tag}`);
   console.log('Cards data:', cardsData.length, 'cards loaded');
   console.log('Shop data:', shopData.packs.length, 'packs loaded');
-  // Create tables if they don't exist (only for user data)
+  
+  // Create tables if they don't exist
   try {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_balances (
@@ -159,6 +181,7 @@ client.once('ready', async () => {
     console.error("Error creating tables:", err);
   }
 });
+
 async function handleButtonInteraction(interaction) {
   if (interaction.customId.startsWith('inventory_')) {
     const inventoryCommand = client.commands.get('inventory');
@@ -192,6 +215,18 @@ async function handleButtonInteraction(interaction) {
     }
   }
 }
+
+// Simple health check server
+const server = http.createServer((req, res) => {
+  res.writeHead(200);
+  res.end('Bot is running');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Health check server running on port ${PORT}`);
+});
+
 client.login(process.env.TOKEN).catch(console.error);
 
 // Export the pool and data for use in other files
