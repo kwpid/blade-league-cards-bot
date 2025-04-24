@@ -2,7 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, StringSelectMenuBu
 import { shopData, calculatePackPrice } from '../index.js';
 
 const ITEMS_PER_PAGE = 6;
-const LIMITED_PACK_IDS = [101]; // Add IDs of packs that should be limited here
+const LIMITED_PACK_IDS = [101]; // IDs of limited packs
 
 export default {
   data: new SlashCommandBuilder()
@@ -13,7 +13,7 @@ export default {
         .setDescription('Page number')
         .setMinValue(1)),
 
-  async execute(interaction, pool, { shopData, calculatePackPrice }) {
+  async execute(interaction, pool, { shopData, calculatePackPrice, config }) {
     const currentPage = interaction.options.getInteger('page') || 1;
     
     // Calculate dynamic prices for all packs
@@ -31,7 +31,7 @@ export default {
       .setColor(0x00AE86)
       .setTitle('🛒 Card Pack Shop')
       .setThumbnail('https://i.imgur.com/J8qTf7i.png')
-      .setFooter({ text: `ROI: ${(shopData.roiPercentage * 100).toFixed(0)}% • Prices update dynamically` });
+      .setFooter({ text: `ROI: ${(config.roiPercentage * 100).toFixed(0)}% • Prices update dynamically` });
 
     // Add limited packs section if any exist
     if (limitedPacks.length > 0) {
