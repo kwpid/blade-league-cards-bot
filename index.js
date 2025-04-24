@@ -11,9 +11,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load config.json
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
-// Module-level commands array
-let commands = [];
-
 // Log Dev Mode status
 console.log(`🧪 Dev Mode is ${config.devMode ? 'ENABLED (Admin-only)' : 'DISABLED (Public)'}`);
 
@@ -43,7 +40,6 @@ async function initDB() {
         await client.query('SELECT NOW()');
         console.log('Database connection successful');
 
-        // Ensure necessary tables are created
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_balances (
             user_id VARCHAR(20) PRIMARY KEY,
@@ -51,7 +47,7 @@ async function initDB() {
             last_updated TIMESTAMP DEFAULT NOW()
           )
         `);
-        
+
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_packs (
             id SERIAL PRIMARY KEY,
@@ -100,9 +96,9 @@ async function initDB() {
   }
 }
 
-// Load commands dynamically from the commands directory
+// Load commands
 async function loadCommands() {
-  commands = []; // Reset the commands array
+  const commands = {};
   const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
     .filter(file => file.endsWith('.js'));
 
@@ -110,7 +106,7 @@ async function loadCommands() {
     try {
       const { default: command } = await import(`./commands/${file}`);
       if (command?.data) {
-        commands.push(command.data.toJSON());
+        commands[command.data.name] = command;
         console.log(`Loaded command: ${command.data.name}`);
       }
     } catch (err) {
@@ -120,85 +116,35 @@ async function loadCommands() {
   return commands;
 }
 
-// Register commands with Discord API (Global or Guild-based)
-async function registerCommands() {
-  await loadCommands();
-
-  // Log commands to ensure they are being loaded
-  if (commands.length === 0) {
-    console.error('No commands loaded. Please check your command files.');
-  } else {
-    console.log(`Loaded ${commands.length} commands.`);
-  }
-
-  try {
-    const guildId = process.env.GUILD_ID;
-    if (process.env.NODE_ENV === 'production') {
-      // Register commands globally (it can take up to an hour to propagate)
-      await client.application.commands.set(commands);
-      console.log('Commands registered globally.');
-    } else {
-      if (!guildId) {
-        console.error('GUILD_ID is not defined in the environment variables.');
-        return;
-      }
-
-      // Log the guild IDs the bot has access to
-      console.log('Guilds the bot has access to:', client.guilds.cache.map(guild => guild.id));
-
-      const guild = client.guilds.cache.get(guildId);
-      if (!guild) {
-        console.error(`Guild with ID ${guildId} not found in the cache. Ensure the bot is in the server.`);
-        return;
-      }
-
-      await guild.commands.set(commands);
-      console.log('Commands registered for guild.');
-    }
-  } catch (error) {
-    console.error('Error registering commands:', error);
-  }
-}
-
 // Main bot function
 async function startBot() {
   try {
     console.log('Starting bot initialization...');
     await initDB();
-    
-    // Wait for client to be ready before registering commands
-    await new Promise((resolve) => {
-      client.once('ready', resolve);
+    const commands = await loadCommands();
+
+    client.once('ready', () => {
+      console.log(`Logged in as ${client.user.tag}`);
     });
-    
-    await registerCommands();
 
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
 
-      const commandName = interaction.commandName;
-      const commandFile = commands.find(cmd => cmd.name === commandName);
-      
-      if (!commandFile) {
-        console.error(`Command ${commandName} not found in commands collection`);
-        return;
+      const command = commands[interaction.commandName];
+      if (!command) return;
+
+      // Restrict command use if in dev mode
+      if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
+        return interaction.reply({
+          content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
+          ephemeral: true
+        });
       }
 
       try {
-        // Dynamically import the command file
-        const { default: command } = await import(`./commands/${commandName}.js`);
-        
-        // Restrict command use if in dev mode
-        if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
-          return interaction.reply({
-            content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
-            ephemeral: true
-          });
-        }
-
         await command.execute(interaction, pool, { cardsData, shopData });
       } catch (error) {
-        console.error(`Error executing ${commandName}:`, error);
+        console.error(`Error executing ${interaction.commandName}:`, error);
         if (interaction.deferred || interaction.replied) {
           await interaction.editReply({ content: '❌ Command failed', ephemeral: true });
         } else {
