@@ -23,14 +23,23 @@ export default {
     const type = interaction.options.getString('type') || 'packs';
     const currentPage = interaction.options.getInteger('page') || 1;
     const items = shopData[type] || [];
+
+    if (items.length === 0) {
+      return await interaction.reply({
+        content: `There are currently no items available in the ${type === 'limitedPacks' ? 'Limited Packs' : 'Packs'} shop.`,
+        ephemeral: true
+      });
+    }
+
     const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-    const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
+    const page = Math.min(currentPage, totalPages);
+    const startIdx = (page - 1) * ITEMS_PER_PAGE;
     const paginatedItems = items.slice(startIdx, startIdx + ITEMS_PER_PAGE);
 
     const embed = new EmbedBuilder()
       .setColor(type === 'limitedPacks' ? 0xFFA500 : 0x00AE86)
       .setTitle(type === 'limitedPacks' ? '🕒 Limited Packs Shop' : '🛒 Card Pack Shop')
-      .setDescription(`Page ${currentPage}/${totalPages} • ${items.length} packs available`)
+      .setDescription(`Page ${page}/${totalPages} • ${items.length} item${items.length > 1 ? 's' : ''} available`)
       .setThumbnail('https://i.imgur.com/J8qTf7i.png');
 
     paginatedItems.forEach(pack => {
@@ -38,7 +47,7 @@ export default {
         name: `${pack.name} (ID: ${pack.id})`,
         value: [
           `💰 **Price:** ⭐ ${pack.price}`,
-          `${pack.description}`,
+          `${pack.description || 'No description provided.'}`,
           `\`/purchase pack id:${pack.id}\``
         ].join('\n'),
         inline: true
