@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { Client, GatewayIntentBits, EmbedBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, EmbedBuilder, REST, Routes } from 'discord.js';
 import { Pool } from 'pg';
 import 'dotenv/config';
 
@@ -29,6 +29,11 @@ const pool = new Pool({
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000
 });
+
+// Discord REST setup
+const CLIENT_ID = process.env.CLIENT_ID;
+const TEST_GUILD_ID = process.env.TEST_GUILD_ID;
+const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 // Initialize database
 async function initDB() {
@@ -115,8 +120,11 @@ async function loadCommands() {
   }
   return commands;
 }
+
+// Register slash commands
 async function registerCommands(commands) {
   const commandsArray = Object.values(commands).map(cmd => cmd.data.toJSON());
+
   if (process.env.NODE_ENV === 'development') {
     console.log('🧪 Dev Mode: Registering test server commands only...');
     await rest.put(
@@ -168,6 +176,7 @@ async function startBot() {
         }
       }
     });
+
     await registerCommands(commands);
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
