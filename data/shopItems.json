@@ -50,7 +50,8 @@
         "rare": 20,
         "legendary": 12,
         "mythic": 3
-      }
+      },
+      "allowedCards": [6, 11, 14, 19, 21, 22] // Only these card IDs can be pulled
     }
   ]
 }
