@@ -30,18 +30,21 @@ export default {
         });
       }
 
-      // Get user balance in a transaction
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
         
-        // Get current balance
-        const balanceResult = await client.query(
-          'SELECT balance FROM user_balances WHERE user_id = $1 FOR UPDATE',
+        // Get or create balance with FOR UPDATE lock
+        const { rows } = await client.query(
+          `INSERT INTO user_balances (user_id, balance)
+           VALUES ($1, 100)
+           ON CONFLICT (user_id) 
+           DO UPDATE SET user_id = EXCLUDED.user_id
+           RETURNING balance`,
           [interaction.user.id]
         );
         
-        const currentBalance = balanceResult.rows[0]?.balance || 100;
+        const currentBalance = rows[0].balance;
         
         if (currentBalance < pack.price) {
           await interaction.reply({ 
@@ -54,14 +57,13 @@ export default {
 
         // Deduct stars
         await client.query(
-          `INSERT INTO user_balances (user_id, balance)
-           VALUES ($1, $2)
-           ON CONFLICT (user_id) 
-           DO UPDATE SET balance = EXCLUDED.balance - $3`,
-          [interaction.user.id, currentBalance, pack.price]
+          `UPDATE user_balances 
+           SET balance = balance - $1
+           WHERE user_id = $2`,
+          [pack.price, interaction.user.id]
         );
         
-        // Add to inventory
+        // Add pack to inventory
         await client.query(
           `INSERT INTO user_packs (user_id, pack_id, pack_name, pack_description, pack_price)
            VALUES ($1, $2, $3, $4, $5)`,
@@ -77,8 +79,8 @@ export default {
       } catch (error) {
         await client.query('ROLLBACK');
         console.error('Purchase error:', error);
-        await interaction.reply({
-          content: "❌ An error occurred during your purchase. Please try again.",
+        await interaction.followUp({
+          content: "❌ An error occurred during purchase. Please try again.",
           flags: "Ephemeral"
         });
       } finally {
