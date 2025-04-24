@@ -128,34 +128,19 @@ async function registerCommands(commands) {
 
   if (process.env.NODE_ENV === 'development') {
     console.log('🧪 Dev Mode: Registering test server commands only...');
-
-    // Clear test server commands
-    await rest.put(
-      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.TEST_GUILD_ID),
-      { body: [] }
-    );
-
-    // Re-register only dev commands
     await rest.put(
       Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.TEST_GUILD_ID),
       { body: commandsArray }
     );
   } else {
     console.log('🚀 Prod Mode: Registering global commands...');
-
-    // Clear global commands
-    await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
-      { body: [] }
-    );
-
-    // Re-register global commands
     await rest.put(
       Routes.applicationCommands(process.env.CLIENT_ID),
       { body: commandsArray }
     );
   }
 }
+
 
 // Verify database structure
 async function verifyDatabaseStructure() {
