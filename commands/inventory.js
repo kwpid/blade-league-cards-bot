@@ -1,9 +1,6 @@
 import {
   SlashCommandBuilder,
   EmbedBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   StringSelectMenuBuilder
 } from 'discord.js';
 
@@ -42,50 +39,12 @@ export default {
         .setDescription('Page number')
         .setMinValue(1)),
 
-  async execute(interaction, pool, { cardsData, shopData }) {
-    // Handle button or select menu interactions
-    if (interaction.isButton() || interaction.isStringSelectMenu()) {
-      return this.handleButtonInteraction(interaction, pool);
-    }
-
-    // Handle slash command
+  async execute(interaction, pool) {
     const type = interaction.options.getString('type') || 'cards';
     const rarityFilter = interaction.options.getString('rarity');
     const page = interaction.options.getInteger('page') || 1;
 
     await this.showInventory(interaction, pool, type, rarityFilter, page);
-  },
-
-  async handleButtonInteraction(interaction, pool) {
-    try {
-      // Defer the interaction first to prevent timeout
-      await interaction.deferUpdate();
-      
-      let type, rarityFilter, page;
-      
-      if (interaction.isStringSelectMenu()) {
-        // Handle select menu interaction
-        const [_, __, interactionType, currentPage] = interaction.customId.split('_');
-        type = interactionType;
-        rarityFilter = interaction.values[0] === 'all' ? null : interaction.values[0];
-        page = parseInt(currentPage);
-      } else {
-        // Handle button interaction
-        const [_, interactionType, interactionRarityFilter, interactionPage] = interaction.customId.split('_');
-        type = interactionType;
-        rarityFilter = interactionRarityFilter === 'all' ? null : interactionRarityFilter;
-        page = parseInt(interactionPage);
-      }
-
-      await this.showInventory(interaction, pool, type, rarityFilter, page);
-    } catch (error) {
-      console.error('Error handling button interaction:', error);
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply({ content: '❌ Failed to update inventory', flags: 1 << 6 });
-      } else {
-        await interaction.reply({ content: '❌ Failed to update inventory', flags: 1 << 6, ephemeral: true });
-      }
-    }
   },
 
   async showInventory(interaction, pool, type, rarityFilter, page) {
@@ -137,25 +96,6 @@ export default {
       });
     }
 
-    // Pagination buttons
-    const row = new ActionRowBuilder();
-    if (page > 1) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inv_${type}_${rarityFilter || 'all'}_${page - 1}`)
-          .setLabel('◀ Previous')
-          .setStyle(ButtonStyle.Secondary)
-      );
-    }
-    if (page < totalPages) {
-      row.addComponents(
-        new ButtonBuilder()
-          .setCustomId(`inv_${type}_${rarityFilter || 'all'}_${page + 1}`)
-          .setLabel('Next ▶')
-          .setStyle(ButtonStyle.Secondary)
-      );
-    }
-
     // Rarity dropdown
     const filterRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
@@ -173,7 +113,7 @@ export default {
 
     const responseOptions = {
       embeds: [embed],
-      components: [filterRow, row].filter(row => row.components.length > 0),
+      components: [filterRow],
       flags: 1 << 6 // Ephemeral flag
     };
 
