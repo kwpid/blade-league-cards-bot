@@ -77,34 +77,45 @@ export default {
         }
       }
 
-      // Filter cards by selected rarity
-      const eligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
+      // Filter cards by selected rarity and pack restrictions
+      let eligibleCards = cardsData.filter(card => {
+        const matchesRarity = card.rarity === selectedRarity;
+        // If pack has allowedCards, only include those cards
+        if (packInfo.allowedCards) {
+          return matchesRarity && packInfo.allowedCards.includes(card.id);
+        }
+        return matchesRarity;
+      });
+
       if (eligibleCards.length === 0) {
-        // Fallback to any card if no cards found for selected rarity
-        selectedRarity = cardsData[Math.floor(Math.random() * cardsData.length)].rarity;
+        // Fallback - if no cards match both rarity and allowedCards, just use allowedCards
+        if (packInfo.allowedCards) {
+          eligibleCards = cardsData.filter(card => packInfo.allowedCards.includes(card.id));
+        } else {
+          // Original fallback
+          eligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
+        }
       }
 
       // Select random card from filtered pool
-      const finalEligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
-      const randomCard = finalEligibleCards[Math.floor(Math.random() * finalEligibleCards.length)];
+      const randomCard = eligibleCards[Math.floor(Math.random() * eligibleCards.length)];
       
       const baseValue = {
-  common: 50,
-  uncommon: 100,
-  rare: 250,
-  legendary: 500,
-  mythic: 1000
-}[randomCard.rarity];
+        common: 50,
+        uncommon: 100,
+        rare: 250,
+        legendary: 500,
+        mythic: 1000
+      }[randomCard.rarity];
 
-// Calculate total stats and a bonus (e.g., 0.6 stars per stat point)
-const totalStats = randomCard.stats.OFF + randomCard.stats.DEF + randomCard.stats.ABL + randomCard.stats.MCH;
-const statBonus = Math.floor(totalStats * 0.3); 
+      // Calculate total stats and a bonus
+      const totalStats = randomCard.stats.OFF + randomCard.stats.DEF + randomCard.stats.ABL + randomCard.stats.MCH;
+      const statBonus = Math.floor(totalStats * 0.3); 
 
-cardsToAdd.push({
-  ...randomCard,
-  value: baseValue + statBonus
-});
-
+      cardsToAdd.push({
+        ...randomCard,
+        value: baseValue + statBonus
+      });
     }
 
     // Start transaction
