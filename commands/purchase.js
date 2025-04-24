@@ -10,9 +10,7 @@ export default {
       option.setName("type")
         .setDescription("The type of item to purchase (only 'pack' is valid)")
         .setRequired(true)
-        .addChoices(
-          { name: "pack", value: "pack" }
-        ))
+        .addChoices({ name: "pack", value: "pack" }))
     .addIntegerOption(option =>
       option.setName("id")
         .setDescription("The ID of the pack to purchase")
@@ -30,8 +28,7 @@ export default {
       });
     }
 
-    // Merge normal + limited packs
-    const allPacks = [...shopData.packs, ...shopData.limited];
+    const allPacks = [...(shopData.packs || []), ...(shopData.limitedPacks || [])];
     const item = allPacks.find(p => p.id === id);
 
     if (!item) {
@@ -41,7 +38,7 @@ export default {
       });
     }
 
-    const isLimited = shopData.limited.some(p => p.id === item.id);
+    const isLimited = (shopData.limitedPacks || []).some(p => p.id === item.id);
 
     const client = await pool.connect();
     try {
