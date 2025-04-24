@@ -10,8 +10,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Load config.json
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
-
-// Log Dev Mode status
 console.log(`🧪 Dev Mode is ${config.devMode ? 'ENABLED (Admin-only)' : 'DISABLED (Public)'}`);
 
 // Create Discord client
@@ -32,9 +30,10 @@ const pool = new Pool({
 
 // Discord REST setup
 const CLIENT_ID = process.env.CLIENT_ID;
-const TEST_GUILD_ID = process.env.TEST_GUILD_ID;
+const GUILD_ID = process.env.GUILD_ID;
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
+// DB Init
 async function initDB() {
   let retries = 5;
   while (retries > 0) {
@@ -95,18 +94,16 @@ async function initDB() {
     } catch (err) {
       retries--;
       console.error(`Database connection failed (${retries} retries left):`, err);
-      if (retries === 0) {
-        throw new Error('Failed to connect to database after multiple attempts');
-      }
+      if (retries === 0) throw new Error('Failed to connect to database after multiple attempts');
       await new Promise(res => setTimeout(res, 5000));
     }
   }
 }
-// Load commands
+
+// Load slash commands
 async function loadCommands() {
   const commands = {};
-  const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
-    .filter(file => file.endsWith('.js'));
+  const commandFiles = fs.readdirSync(path.join(__dirname, 'commands')).filter(file => file.endsWith('.js'));
 
   for (const file of commandFiles) {
     try {
@@ -122,19 +119,28 @@ async function loadCommands() {
   return commands;
 }
 
+// Register commands to the specific guild
 async function registerCommands(commands) {
-  const commandsArray = Object.values(commands).map(cmd => cmd.data.toJSON());
+  try {
+    console.log('🗑️ Clearing existing guild commands...');
+    const existingCommands = await rest.get(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID));
+    const deletePromises = existingCommands.map(cmd =>
+      rest.delete(Routes.applicationGuildCommand(CLIENT_ID, GUILD_ID, cmd.id))
+    );
+    await Promise.all(deletePromises);
+    console.log(`✅ Cleared ${existingCommands.length} existing commands`);
 
-  console.log('📡 Registering guild commands...');
-  await rest.put(
-    Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-    { body: commandsArray }
-  );
+    const commandsArray = Object.values(commands).map(cmd => cmd.data.toJSON());
+    console.log('📡 Registering guild commands...');
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commandsArray });
+    console.log(`✅ Successfully registered ${commandsArray.length} guild commands`);
+  } catch (error) {
+    console.error('Failed to register commands:', error);
+    throw error;
+  }
 }
 
-
-
-// Verify database structure
+// Ensure DB schema
 async function verifyDatabaseStructure() {
   const client = await pool.connect();
   try {
@@ -175,7 +181,6 @@ async function startBot() {
 
     client.on('interactionCreate', async interaction => {
       if (interaction.isCommand()) {
-        // Debug commands
         if (interaction.commandName === 'debug-refresh') {
           if (!interaction.memberPermissions.has('Administrator')) {
             return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
@@ -183,20 +188,12 @@ async function startBot() {
           try {
             await registerCommands(commands);
             await verifyDatabaseStructure();
-            return interaction.reply({ 
-              content: '✅ Commands refreshed and database verified!', 
-              ephemeral: true 
-            });
+            return interaction.reply({ content: '✅ Commands refreshed and database verified!', ephemeral: true });
           } catch (error) {
-            console.error('Debug refresh failed:', error);
-            return interaction.reply({ 
-              content: `❌ Failed to refresh: ${error.message}`, 
-              ephemeral: true 
-            });
+            return interaction.reply({ content: `❌ Failed to refresh: ${error.message}`, ephemeral: true });
           }
         }
 
-        // Normal command handling
         const command = commands[interaction.commandName];
         if (!command) return;
 
@@ -211,10 +208,9 @@ async function startBot() {
           await command.execute(interaction, pool, { cardsData, shopData });
         } catch (error) {
           console.error(`Error executing ${interaction.commandName}:`, error);
-          const errorMessage = error.code === '42703' 
+          const errorMessage = error.code === '42703'
             ? "❌ Database needs update! Use `/debug-refresh` as admin to fix."
             : '❌ Command failed';
-          
           if (interaction.deferred || interaction.replied) {
             await interaction.editReply({ content: errorMessage, ephemeral: true });
           } else {
@@ -222,35 +218,22 @@ async function startBot() {
           }
         }
       } else if (interaction.isStringSelectMenu()) {
-        // Handle only select menu interactions (for rarity filter)
         try {
           if (interaction.customId === 'inventory_filter') {
             const type = interaction.message.embeds[0].title.includes('Packs') ? 'packs' : 'cards';
             const inventoryCommand = commands['inventory'];
-            
-            if (!inventoryCommand) {
-              throw new Error('Inventory command not found');
-            }
+            if (!inventoryCommand) throw new Error('Inventory command not found');
 
-            // Create options for the inventory command
             const options = {
               getString: (name) => {
                 if (name === 'type') return type;
                 if (name === 'rarity') return interaction.values[0] === 'all' ? null : interaction.values[0];
                 return null;
               },
-              getInteger: (name) => {
-                if (name === 'page') return 1; // Always reset to page 1 when filtering
-                return null;
-              }
+              getInteger: (name) => (name === 'page' ? 1 : null)
             };
 
-            await inventoryCommand.execute({
-              ...interaction,
-              options,
-              user: interaction.user
-            }, pool, { cardsData, shopData });
-            
+            await inventoryCommand.execute({ ...interaction, options, user: interaction.user }, pool, { cardsData, shopData });
             await interaction.deferUpdate();
           }
         } catch (error) {
@@ -268,15 +251,12 @@ async function startBot() {
     await verifyDatabaseStructure();
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
-
   } catch (error) {
     console.error('Fatal error during bot startup:', error);
     process.exit(1);
   }
 }
 
-// Start the bot
 startBot();
 
-// Export for command use
 export { pool, cardsData, shopData };
