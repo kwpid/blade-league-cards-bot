@@ -26,6 +26,7 @@ export default {
     const packsRes = await pool.query(
       `SELECT * FROM user_packs 
        WHERE user_id = $1 AND pack_id = $2 AND opened = false
+       ORDER BY id ASC
        LIMIT $3`,
       [userId, packId, quantity]
     );
@@ -33,7 +34,7 @@ export default {
     if (packsRes.rows.length === 0) {
       return interaction.reply({
         content: `❌ You don't have ${quantity} unopened pack(s) with ID ${packId}!`,
-        flags: "Ephemeral"
+        ephemeral: true
       });
     }
 
@@ -42,17 +43,9 @@ export default {
     if (!packInfo) {
       return interaction.reply({
         content: `❌ Invalid pack ID ${packId}!`,
-        flags: "Ephemeral"
+        ephemeral: true
       });
     }
-
-    // Mark packs as opened
-    await pool.query(
-      `UPDATE user_packs 
-       SET opened = true 
-       WHERE id = ANY($1::int[])`,
-      [packsRes.rows.map(p => p.id)]
-    );
 
     // Generate cards using pack's rarity distribution
     const cardsToAdd = [];
@@ -93,48 +86,74 @@ export default {
       });
     }
 
-    // Batch insert cards and get their unique IDs
-    const insertedCards = [];
-    for (const card of cardsToAdd) {
-      const res = await pool.query(
-        `INSERT INTO user_cards 
-         (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-         RETURNING id`,
-        [
-          userId, 
-          card.id, 
-          card.name, 
-          card.rarity, 
-          card.stats.OFF, 
-          card.stats.DEF, 
-          card.stats.ABL, 
-          card.stats.MCH, 
-          card.value
-        ]
+    // Start transaction
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Batch insert cards and get their unique IDs
+      const insertedCards = [];
+      for (const card of cardsToAdd) {
+        const res = await client.query(
+          `INSERT INTO user_cards 
+           (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           RETURNING id`,
+          [
+            userId, 
+            card.id, 
+            card.name, 
+            card.rarity, 
+            card.stats.OFF, 
+            card.stats.DEF, 
+            card.stats.ABL, 
+            card.stats.MCH, 
+            card.value
+          ]
+        );
+        insertedCards.push({
+          ...card,
+          unique_id: res.rows[0].id
+        });
+      }
+
+      // DELETE the opened packs instead of marking them as opened
+      await client.query(
+        `DELETE FROM user_packs 
+         WHERE id = ANY($1::int[])`,
+        [packsRes.rows.map(p => p.id)]
       );
-      insertedCards.push({
-        ...card,
-        unique_id: res.rows[0].id
+
+      await client.query('COMMIT');
+
+      // Create embed
+      const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle(`🎁 Opened ${quantity} ${packInfo.name}${quantity > 1 ? 's' : ''}!`)
+        .setDescription(`Obtained ${insertedCards.length} card${insertedCards.length > 1 ? 's' : ''}`)
+        .setThumbnail('https://i.imgur.com/r3JYj4x.png');
+
+      insertedCards.forEach((card, idx) => {
+        const uniqueId = `${card.id}:${card.unique_id.toString().padStart(3, '0')}`;
+        embed.addFields({
+          name: `#${idx + 1} ${card.name} (${uniqueId})`,
+          value: `✨ ${card.rarity.toUpperCase()} • ⭐ ${card.value}\n` +
+                 `⚔️${card.stats.OFF} 🛡️${card.stats.DEF} 🎯${card.stats.ABL} 🤖${card.stats.MCH}`,
+          inline: true
+        });
       });
+
+      await interaction.reply({ embeds: [embed] });
+
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('Error opening packs:', error);
+      await interaction.reply({
+        content: '❌ An error occurred while opening your packs. Please try again.',
+        ephemeral: true
+      });
+    } finally {
+      client.release();
     }
-
-    // Create embed
-    const embed = new EmbedBuilder()
-      .setColor(0x0099FF)
-      .setTitle(`🎁 Opened ${quantity} ${packInfo.name}${quantity > 1 ? 's' : ''}!`)
-      .setDescription(`Obtained ${insertedCards.length} card${insertedCards.length > 1 ? 's' : ''}`)
-      .setThumbnail('https://i.imgur.com/r3JYj4x.png');
-
-    insertedCards.forEach((card, idx) => {
-      const uniqueId = `${card.id}:${card.unique_id.toString().padStart(3, '0')}`;
-      embed.addFields({
-        name: `#${idx + 1} ${card.name} (${uniqueId})`,
-        value: `✨ ${card.rarity.toUpperCase()} • ⭐ ${card.value}\n⚔️${card.stats.OFF} 🛡️${card.stats.DEF} 🎯${card.stats.ABL} 🤖${card.stats.MCH}`,
-        inline: true
-      });
-    });
-
-    await interaction.reply({ embeds: [embed] });
   }
-}
+};
