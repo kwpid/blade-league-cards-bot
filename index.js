@@ -5,15 +5,22 @@ import { Client, GatewayIntentBits, EmbedBuilder } from 'discord.js';
 import { Pool } from 'pg';
 import 'dotenv/config';
 
-// Basic setup
+// Setup __dirname for ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Load config.json
+const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
+
+// Log Dev Mode status
+console.log(`🧪 Dev Mode is ${config.devMode ? 'ENABLED (Admin-only)' : 'DISABLED (Public)'}`);
+
+// Create Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
 // Load data files
 const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
 const cardsData = loadJSON('data/cards.json');
 const shopData = loadJSON('data/shopItems.json');
-const config = loadJSON('config.json'); // Load config
 
 // Database setup
 const pool = new Pool({
@@ -23,7 +30,7 @@ const pool = new Pool({
   idleTimeoutMillis: 30000
 });
 
-// Database initialization with retry logic
+// Initialize database
 async function initDB() {
   let retries = 5;
   while (retries > 0) {
@@ -33,7 +40,6 @@ async function initDB() {
         await client.query('SELECT NOW()');
         console.log('Database connection successful');
 
-        // Create tables
         await client.query(`
           CREATE TABLE IF NOT EXISTS user_balances (
             user_id VARCHAR(20) PRIMARY KEY,
@@ -90,7 +96,7 @@ async function initDB() {
   }
 }
 
-// Command loader
+// Load commands
 async function loadCommands() {
   const commands = {};
   const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
@@ -114,32 +120,26 @@ async function loadCommands() {
 async function startBot() {
   try {
     console.log('Starting bot initialization...');
-
-    // Initialize database
     await initDB();
-
-    // Load commands
     const commands = await loadCommands();
 
-    // Client ready event
     client.once('ready', () => {
       console.log(`Logged in as ${client.user.tag}`);
     });
 
-    // Command handler
     client.on('interactionCreate', async interaction => {
       if (!interaction.isCommand()) return;
 
-      // Dev Mode check
+      const command = commands[interaction.commandName];
+      if (!command) return;
+
+      // Restrict command use if in dev mode
       if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
         return interaction.reply({
-          content: '🚧 Bot is in Dev Mode. Commands are currently admin-only.',
+          content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
           ephemeral: true
         });
       }
-
-      const command = commands[interaction.commandName];
-      if (!command) return;
 
       try {
         await command.execute(interaction, pool, { cardsData, shopData });
@@ -152,8 +152,7 @@ async function startBot() {
         }
       }
     });
-    console.log(`🧪 Dev Mode is ${config.devMode ? 'ENABLED (Admin-only)' : 'DISABLED (Public)'}`);
-    // Login
+
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
   } catch (error) {
@@ -162,8 +161,8 @@ async function startBot() {
   }
 }
 
-// Start
+// Start the bot
 startBot();
 
-// Export
+// Export for command use
 export { pool, cardsData, shopData };
