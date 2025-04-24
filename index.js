@@ -142,26 +142,68 @@ async function registerCommands(commands) {
   }
 }
 
-// Add this right before client.login() in your startBot() function
+// Start bot
 async function startBot() {
   try {
     console.log('Starting bot initialization...');
     await initDB();
     const commands = await loadCommands();
 
-    // Add this temporary debug command
+    client.once('ready', () => {
+      console.log(`Logged in as ${client.user.tag}`);
+      console.log(`Loaded ${Object.keys(commands).length} commands`);
+    });
+
+    // Interaction handler with command refresh capability
     client.on('interactionCreate', async interaction => {
-      if (interaction.isCommand() && interaction.commandName === 'debug-refresh') {
+      if (!interaction.isCommand()) return;
+
+      // Debug command to refresh slash commands (admin only)
+      if (interaction.commandName === 'debug-refresh') {
         if (!interaction.memberPermissions.has('Administrator')) {
           return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
         }
-        await registerCommands(commands);
-        return interaction.reply({ content: '✅ Commands refreshed!', ephemeral: true });
+        try {
+          await registerCommands(commands);
+          return interaction.reply({ content: '✅ Commands refreshed successfully!', ephemeral: true });
+        } catch (error) {
+          console.error('Debug refresh failed:', error);
+          return interaction.reply({ content: '❌ Failed to refresh commands', ephemeral: true });
+        }
+      }
+
+      // Normal command handling
+      const command = commands[interaction.commandName];
+      if (!command) return;
+
+      // Restrict command use if in dev mode
+      if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
+        return interaction.reply({
+          content: '🧪 Bot is in **Dev Mode**. Commands are restricted to admins.',
+          ephemeral: true
+        });
+      }
+
+      try {
+        await command.execute(interaction, pool, { cardsData, shopData });
+      } catch (error) {
+        console.error(`Error executing ${interaction.commandName}:`, error);
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ content: '❌ Command failed', ephemeral: true });
+        } else {
+          await interaction.reply({ content: '❌ Command failed', ephemeral: true });
+        }
       }
     });
 
+    // Register commands on startup
+    await registerCommands(commands);
+    console.log('Commands registered with Discord API');
+    
+    // Login to Discord
     await client.login(process.env.TOKEN);
     console.log('Bot is now running!');
+
   } catch (error) {
     console.error('Fatal error during bot startup:', error);
     process.exit(1);
