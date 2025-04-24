@@ -45,7 +45,7 @@ export default {
 
     const userId = interaction.user.id;
 
-    let query = `SELECT * FROM user_${type} WHERE user_id = $1`;
+    let query = `SELECT *, id as unique_id FROM user_${type} WHERE user_id = $1`;
     const params = [userId];
 
     if (type === 'cards' && rarityFilter) {
@@ -53,6 +53,11 @@ export default {
       params.push(rarityFilter);
     } else if (type === 'packs') {
       query += ` AND opened = false`;
+    }
+
+    // Add sorting for cards (by value descending)
+    if (type === 'cards') {
+      query += ` ORDER BY value DESC`;
     }
 
     query += ` LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
@@ -83,9 +88,11 @@ export default {
       });
     } else {
       items.forEach(card => {
+        // Generate the unique ID format [cardId]:[uniqueId]
+        const uniqueId = `${card.card_id}:${card.unique_id.toString().padStart(3, '0')}`;
         embed.addFields({
-          name: `${card.card_name}`,
-          value: `✨ ${card.rarity}\n⭐ ${card.value} stars\n\`/view ${card.card_id}\``,
+          name: `${card.card_name} (${uniqueId})`,
+          value: `✨ ${card.rarity}\n⭐ ${card.value} stars\n\`/view ${uniqueId}\``,
           inline: true
         });
       });
