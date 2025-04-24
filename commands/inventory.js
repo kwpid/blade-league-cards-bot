@@ -1,4 +1,11 @@
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
+import {
+  SlashCommandBuilder,
+  EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder
+} from 'discord.js';
 
 const ITEMS_PER_PAGE = 9;
 const RARITY_COLORS = {
@@ -43,7 +50,7 @@ export default {
 
     let query = `SELECT * FROM user_${type} WHERE user_id = $1`;
     const params = [userId];
-    
+
     if (type === 'cards' && rarityFilter) {
       query += ` AND rarity = $2`;
       params.push(rarityFilter);
@@ -60,14 +67,16 @@ export default {
       [userId, ...(rarityFilter ? [rarityFilter] : [])]
     );
 
-    const totalPages = Math.ceil(totalCount / ITEMS_PER_PAGE);
+    const totalPages = Math.max(1, Math.ceil(totalCount / ITEMS_PER_PAGE));
 
     const embed = new EmbedBuilder()
       .setColor(RARITY_COLORS[rarityFilter] || 0x7289DA)
       .setTitle(`${type === 'packs' ? '📦' : '🃏'} ${interaction.user.username}'s Inventory`)
       .setFooter({ text: `Page ${page}/${totalPages} • ${totalCount} ${type}` });
 
-    if (type === 'packs') {
+    if (items.length === 0) {
+      embed.setDescription('No items found on this page.');
+    } else if (type === 'packs') {
       items.forEach(pack => {
         embed.addFields({
           name: `📦 ${pack.pack_name}`,
@@ -85,7 +94,7 @@ export default {
       });
     }
 
-    // Filter/pagination controls
+    // Pagination buttons
     const row = new ActionRowBuilder();
     if (page > 1) {
       row.addComponents(
@@ -104,10 +113,10 @@ export default {
       );
     }
 
-    // Rarity filter dropdown
+    // Rarity dropdown
     const filterRow = new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder()
-        .setCustomId('inventory_filter')
+        .setCustomId(`inventory_filter_${type}_${page}`)
         .setPlaceholder('Filter by rarity')
         .addOptions([
           { label: 'All Rarities', value: 'all' },
@@ -122,7 +131,7 @@ export default {
     await interaction.reply({
       embeds: [embed],
       components: [filterRow, row],
-      flags: "Ephemeral"
+      ephemeral: true
     });
   }
 };
