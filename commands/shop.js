@@ -2,46 +2,60 @@ import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { shopData } from '../index.js';
 
 const ITEMS_PER_PAGE = 6;
+const LIMITED_PACK_IDS = [101]; // Add IDs of packs that should be limited here
 
 export default {
   data: new SlashCommandBuilder()
     .setName('shop')
     .setDescription('View available card packs')
-    .addStringOption(option =>
-      option.setName('type')
-        .setDescription('Type of shop')
-        .setChoices(
-          { name: 'Packs', value: 'packs' },
-          { name: 'Limited Packs', value: 'limitedPacks' }
-        ))
     .addIntegerOption(option =>
       option.setName('page')
         .setDescription('Page number')
         .setMinValue(1)),
 
   async execute(interaction) {
-    const type = interaction.options.getString('type') || 'packs';
     const currentPage = interaction.options.getInteger('page') || 1;
-    const items = shopData[type] || [];
+    
+    // Separate packs into regular and limited
+    const regularPacks = (shopData.packs || []).filter(pack => !LIMITED_PACK_IDS.includes(pack.id));
+    const limitedPacks = (shopData.packs || []).filter(pack => LIMITED_PACK_IDS.includes(pack.id));
 
-    if (items.length === 0) {
-      return await interaction.reply({
-        content: `There are currently no items available in the ${type === 'limitedPacks' ? 'Limited Packs' : 'Packs'} shop.`,
-        ephemeral: true
-      });
-    }
-
-    const totalPages = Math.ceil(items.length / ITEMS_PER_PAGE);
-    const page = Math.min(currentPage, totalPages);
-    const startIdx = (page - 1) * ITEMS_PER_PAGE;
-    const paginatedItems = items.slice(startIdx, startIdx + ITEMS_PER_PAGE);
-
+    // Create embed
     const embed = new EmbedBuilder()
-      .setColor(type === 'limitedPacks' ? 0xFFA500 : 0x00AE86)
-      .setTitle(type === 'limitedPacks' ? '🕒 Limited Packs Shop' : '🛒 Card Pack Shop')
-      .setDescription(`Page ${page}/${totalPages} • ${items.length} item${items.length > 1 ? 's' : ''} available`)
+      .setColor(0x00AE86)
+      .setTitle('🛒 Card Pack Shop')
       .setThumbnail('https://i.imgur.com/J8qTf7i.png');
 
+    // Add limited packs section if any exist
+    if (limitedPacks.length > 0) {
+      embed.addFields({
+        name: '🕒 Limited Time Packs',
+        value: 'These packs are only available for a limited time!',
+        inline: false
+      });
+
+      limitedPacks.forEach(pack => {
+        embed.addFields({
+          name: `${pack.name} (ID: ${pack.id})`,
+          value: [
+            `💰 **Price:** ⭐ ${pack.price}`,
+            `${pack.description || 'No description provided.'}`,
+            `\`/purchase pack id:${pack.id}\``
+          ].join('\n'),
+          inline: true
+        });
+      });
+
+      embed.addFields({ name: '\u200B', value: 'Regular Packs', inline: false });
+    }
+
+    // Handle pagination for regular packs
+    const totalPages = Math.ceil(regularPacks.length / ITEMS_PER_PAGE);
+    const page = Math.min(currentPage, totalPages);
+    const startIdx = (page - 1) * ITEMS_PER_PAGE;
+    const paginatedItems = regularPacks.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+
+    // Add regular packs
     paginatedItems.forEach(pack => {
       embed.addFields({
         name: `${pack.name} (ID: ${pack.id})`,
@@ -53,6 +67,9 @@ export default {
         inline: true
       });
     });
+
+    embed.setDescription(`Page ${page}/${totalPages} • ${regularPacks.length} regular pack${regularPacks.length !== 1 ? 's' : ''} available` +
+      (limitedPacks.length > 0 ? ` • ${limitedPacks.length} limited pack${limitedPacks.length !== 1 ? 's' : ''}` : ''));
 
     await interaction.reply({
       embeds: [embed],
