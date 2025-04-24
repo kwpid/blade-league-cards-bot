@@ -11,6 +11,12 @@ import http from 'http';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Initialize variables that will be exported
+let cardsData;
+let shopData;
+const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+client.commands = new Collection();
+
 process.on('unhandledRejection', error => {
   console.error('Unhandled promise rejection:', error);
 });
@@ -19,13 +25,13 @@ process.on('unhandledRejection', error => {
 console.log("Starting bot with Node.js", process.version);
 console.log("Current directory:", __dirname);
 
-// Verify data files exist
+// Verify data files exist and load data
 try {
   console.log("Files in data directory:", fs.readdirSync(path.join(__dirname, 'data')));
   
   // Load card and shop data
-  const cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8'));
-  const shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
+  cardsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/cards.json'), 'utf8'));
+  shopData = JSON.parse(fs.readFileSync(path.join(__dirname, 'data/shopItems.json'), 'utf8'));
   
   console.log('Cards data loaded:', cardsData.length, 'cards');
   console.log('Shop data loaded:', shopData.packs.length, 'packs');
@@ -35,9 +41,6 @@ try {
 }
 
 config();
-
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
-client.commands = new Collection();
 
 // PostgreSQL Pool Setup
 const pool = new Pool({
