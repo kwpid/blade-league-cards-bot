@@ -88,16 +88,23 @@ export default {
       const finalEligibleCards = cardsData.filter(card => card.rarity === selectedRarity);
       const randomCard = finalEligibleCards[Math.floor(Math.random() * finalEligibleCards.length)];
       
-      cardsToAdd.push({
-        ...randomCard,
-        value: {
-          common: 50,
-          uncommon: 100,
-          rare: 250,
-          legendary: 500,
-          mythic: 1000
-        }[randomCard.rarity]
-      });
+      const baseValue = {
+  common: 50,
+  uncommon: 100,
+  rare: 250,
+  legendary: 500,
+  mythic: 1000
+}[randomCard.rarity];
+
+// Calculate total stats and a bonus (e.g., 2 coins per stat point)
+const totalStats = randomCard.stats.OFF + randomCard.stats.DEF + randomCard.stats.ABL + randomCard.stats.MCH;
+const statBonus = Math.floor(totalStats * 2); // tweak multiplier if needed
+
+cardsToAdd.push({
+  ...randomCard,
+  value: baseValue + statBonus
+});
+
     }
 
     // Start transaction
