@@ -14,6 +14,7 @@ const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), '
 
 // Log Dev Mode status
 console.log(`🧪 Dev Mode is ${config.devMode ? 'ENABLED (Admin-only)' : 'DISABLED (Public)'}`);
+console.log(`💰 Current ROI: ${(config.roiPercentage * 100).toFixed(0)}%`);
 
 // Create Discord client
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
@@ -21,7 +22,10 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 // Load data files
 const loadJSON = (file) => JSON.parse(fs.readFileSync(path.join(__dirname, file), 'utf8'));
 const cardsData = loadJSON('data/cards.json');
-const shopData = loadJSON('data/shopItems.json');
+const shopData = {
+  ...loadJSON('data/shopItems.json'),
+  roiPercentage: config.roiPercentage
+};
 
 // Database setup
 const pool = new Pool({
@@ -233,7 +237,7 @@ async function startBot() {
       // Set bot presence
       client.user.setPresence({
         activities: [{
-          name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'}`,
+          name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
           type: ActivityType.Playing
         }],
         status: 'online'
@@ -275,12 +279,13 @@ async function startBot() {
         }
 
         try {
-         await command.execute(interaction, pool, { 
-    cardsData, 
-    shopData,
-    calculateCardValue,
-    calculatePackPrice
-  });
+          await command.execute(interaction, pool, { 
+            cardsData, 
+            shopData,
+            calculateCardValue,
+            calculatePackPrice,
+            config
+          });
         } catch (error) {
           console.error(`❌ Error executing ${interaction.commandName}:`, error);
           const errorMessage = error.code === '42703' 
@@ -344,4 +349,11 @@ async function startBot() {
 // Start the bot
 startBot();
 
-export { pool, cardsData, shopData };
+export { 
+  pool, 
+  cardsData, 
+  shopData,
+  calculateCardValue,
+  calculatePackPrice,
+  config
+};
