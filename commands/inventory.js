@@ -1,7 +1,4 @@
-import {
-  SlashCommandBuilder,
-  EmbedBuilder
-} from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
 const ITEMS_PER_PAGE = 6;
 const RARITY_COLORS = {
@@ -103,8 +100,10 @@ export default {
           items.forEach(card => {
             const cardData = cardsData.find(c => c.id === card.card_id);
             const uniqueId = `${card.card_id}:${card.unique_id.toString().padStart(3, '0')}`;
+            const tagDisplay = card.tags?.length ? ` [${card.tags.join(' ')}]` : '';
+            
             embed.addFields({
-              name: `🃏 ${card.card_name} (${uniqueId})`,
+              name: `🃏 ${card.card_name}${tagDisplay} (${uniqueId})`,
               value:
                 `✨ ${card.rarity.charAt(0).toUpperCase() + card.rarity.slice(1)}\n` +
                 `⭐ Value: ${card.value} stars\n` +
