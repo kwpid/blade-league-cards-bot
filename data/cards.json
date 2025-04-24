@@ -69,7 +69,8 @@
       "MCH": 92
     },
     "rarity": "mythic",
-    "availableTypes": "all"
+    "availableTypes": "all",
+    "exclusiveToPack": [101]
   },
   {
     "id": 7,
