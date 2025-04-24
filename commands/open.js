@@ -120,29 +120,43 @@ export default {
       });
     }
 
-    // Batch insert cards
-    const values = cardsToAdd.map(card => 
-      `($1, ${card.id}, '${card.name.replace(/'/g, "''")}', '${card.rarity}', 
-       ${card.stats.OFF}, ${card.stats.DEF}, ${card.stats.ABL}, ${card.stats.MCH}, ${card.value})`
-    ).join(',');
-
-    await pool.query(
-      `INSERT INTO user_cards 
-       (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
-       VALUES ${values}`,
-      [userId]
-    );
+    // Batch insert cards and get their unique IDs
+    const insertedCards = [];
+    for (const card of cardsToAdd) {
+      const res = await pool.query(
+        `INSERT INTO user_cards 
+         (user_id, card_id, card_name, rarity, stats_off, stats_def, stats_abl, stats_mch, value)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id`,
+        [
+          userId, 
+          card.id, 
+          card.name, 
+          card.rarity, 
+          card.stats.OFF, 
+          card.stats.DEF, 
+          card.stats.ABL, 
+          card.stats.MCH, 
+          card.value
+        ]
+      );
+      insertedCards.push({
+        ...card,
+        unique_id: res.rows[0].id
+      });
+    }
 
     // Create embed
     const embed = new EmbedBuilder()
       .setColor(0x0099FF)
       .setTitle(`🎁 Opened ${quantity} ${packInfo.name}${quantity > 1 ? 's' : ''}!`)
-      .setDescription(`Obtained ${cardsToAdd.length} card${cardsToAdd.length > 1 ? 's' : ''} (Min rarity: ${minRarity})`)
+      .setDescription(`Obtained ${insertedCards.length} card${insertedCards.length > 1 ? 's' : ''} (Min rarity: ${minRarity})`)
       .setThumbnail('https://i.imgur.com/r3JYj4x.png');
 
-    cardsToAdd.forEach((card, idx) => {
+    insertedCards.forEach((card, idx) => {
+      const uniqueId = `${card.id}:${card.unique_id.toString().padStart(3, '0')}`;
       embed.addFields({
-        name: `#${idx + 1} ${card.name}`,
+        name: `#${idx + 1} ${card.name} (${uniqueId})`,
         value: `✨ ${card.rarity.toUpperCase()} • ⭐ ${card.value}\n⚔️${card.stats.OFF} 🛡️${card.stats.DEF} 🎯${card.stats.ABL} 🤖${card.stats.MCH}`,
         inline: true
       });
