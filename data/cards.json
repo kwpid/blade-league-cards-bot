@@ -13,48 +13,288 @@
   },
   {
     "id": 2,
-    "name": "Dragonpup",
+    "name": "Light",
     "stats": {
-      "OFF": 92,
-      "DEF": 65,
-      "ABL": 78,
-      "MCH": 70
+      "OFF": 94,
+      "DEF": 92,
+      "ABL": 90,
+      "MCH": 89
     },
     "rarity": "legendary",
     "availableTypes": "all"
   },
   {
     "id": 3,
-    "name": "Foxblade",
+    "name": "Influents",
     "stats": {
-      "OFF": 85,
-      "DEF": 75,
-      "ABL": 90,
-      "MCH": 65
+      "OFF": 84,
+      "DEF": 79,
+      "ABL": 92,
+      "MCH": 75
+    },
+    "rarity": "ultra-rare",
+    "availableTypes": "all"
+  },
+  {
+    "id": 4,
+    "name": "BadBrxnd",
+    "stats": {
+      "OFF": 92,
+      "DEF": 87,
+      "ABL": 86,
+      "MCH": 90
+    },
+    "rarity": "ultra-rare",
+    "availableTypes": "all"
+  },
+  {
+    "id": 5,
+    "name": "Seal",
+    "stats": {
+      "OFF": 97,
+      "DEF": 90,
+      "ABL": 86,
+      "MCH": 92
+    },
+    "rarity": "legendary",
+    "availableTypes": "all"
+  },
+  {
+    "id": 6,
+    "name": "Fluf (Prime)",
+    "stats": {
+      "OFF": 102,
+      "DEF": 96,
+      "ABL": 100,
+      "MCH": 92
     },
     "rarity": "mythic",
     "availableTypes": "all"
   },
   {
-    "id": 4,
-    "name": "Bunnyforce",
+    "id": 7,
+    "name": "Bachira",
+    "stats": {
+      "OFF": 94,
+      "DEF": 83,
+      "ABL": 97,
+      "MCH": 89
+    },
+    "rarity": "legendary",
+    "availableTypes": "all"
+  },
+  {
+    "id": 8,
+    "name": "Abi (Rookie)",
+    "stats": {
+      "OFF": 47,
+      "DEF": 34,
+      "ABL": 52,
+      "MCH": 39
+    },
+    "rarity": "common",
+    "availableTypes": "all"
+  },
+  {
+    "id": 9,
+    "name": "Abi",
+    "stats": {
+      "OFF": 72,
+      "DEF": 65,
+      "ABL": 73,
+      "MCH": 61
+    },
+    "rarity": "c",
+    "availableTypes": "all"
+  },
+  {
+    "id": 10,
+    "name": "Light (Rookie)",
+    "stats": {
+      "OFF": 62,
+      "DEF": 59,
+      "ABL": 53,
+      "MCH": 46
+    },
+    "rarity": "common",
+    "availableTypes": "all"
+  },
+  {
+    "id": 11,
+    "name": "Kupidcat (Prime)",
+    "stats": {
+      "OFF": 93,
+      "DEF": 99,
+      "ABL": 89,
+      "MCH": 97
+    },
+    "rarity": "mythic",
+    "availableTypes": "all"
+  },
+  {
+    "id": 12,
+    "name": "Influents (Rookie)",
+    "stats": {
+      "OFF": 56,
+      "DEF": 43,
+      "ABL": 60,
+      "MCH": 47
+    },
+    "rarity": "common",
+    "availableTypes": "all"
+  },
+  {
+    "id": 13,
+    "name": "Fluf (Rookie)",
     "stats": {
       "OFF": 70,
-      "DEF": 80,
-      "ABL": 65,
-      "MCH": 75
+      "DEF": 67,
+      "ABL": 78,
+      "MCH": 54
+    },
+    "rarity": "rare",
+    "availableTypes": "all"
+  },
+  {
+    "id": 14,
+    "name": "Fluf",
+    "stats": {
+      "OFF": 96,
+      "DEF": 91,
+      "ABL": 87,
+      "MCH": 95
+    },
+    "rarity": "legendary",
+    "availableTypes": "all"
+  },
+  {
+    "id": 15,
+    "name": "Zeiny",
+    "stats": {
+      "OFF": 69,
+      "DEF": 64,
+      "ABL": 71,
+      "MCH": 59
     },
     "rarity": "uncommon",
     "availableTypes": "all"
   },
   {
-    "id": 5,
-    "name": "Turtlesteel",
+    "id": 16,
+    "name": "Zeiny (Rookie)",
     "stats": {
-      "OFF": 60,
-      "DEF": 95,
-      "ABL": 55,
-      "MCH": 60
+      "OFF": 52,
+      "DEF": 54,
+      "ABL": 53,
+      "MCH": 38
+    },
+    "rarity": "common",
+    "availableTypes": "all"
+  },
+  {
+    "id": 17,
+    "name": "Vokous",
+    "stats": {
+      "OFF": 81,
+      "DEF": 70,
+      "ABL": 67,
+      "MCH": 70
+    },
+    "rarity": "rare",
+    "availableTypes": "all"
+  },
+  {
+    "id": 18,
+    "name": "Vokous (Rookie)",
+    "stats": {
+      "OFF": 66,
+      "DEF": 50,
+      "ABL": 47,
+      "MCH": 48
+    },
+    "rarity": "common",
+    "availableTypes": "all"
+  },
+  {
+    "id": 19,
+    "name": "Bachira (Prime)",
+    "stats": {
+      "OFF": 102,
+      "DEF": 99,
+      "ABL": 112,
+      "MCH": 97
+    },
+    "rarity": "mythic",
+    "availableTypes": "all"
+  },
+  {
+    "id": 20,
+    "name": "Egg (Rookie)",
+    "stats": {
+      "OFF": 63,
+      "DEF": 67,
+      "ABL": 57,
+      "MCH": 53
+    },
+    "rarity": "uncommon",
+    "availableTypes": "all"
+  },
+  {
+    "id": 21,
+    "name": "Egg",
+    "stats": {
+      "OFF": 86,
+      "DEF": 88,
+      "ABL": 71,
+      "MCH": 73
+    },
+    "rarity": "ultra-rare",
+    "availableTypes": "all"
+  },
+  {
+    "id": 22,
+    "name": "Evo",
+    "stats": {
+      "OFF": 92,
+      "DEF": 87,
+      "ABL": 81,
+      "MCH": 80
+    },
+    "rarity": "ultra-rare",
+    "availableTypes": "all"
+  },
+  {
+    "id": 23,
+    "name": "Evo (Rookie)",
+    "stats": {
+      "OFF": 62,
+      "DEF": 55,
+      "ABL": 66,
+      "MCH": 76
+    },
+    "rarity": "uncommon",
+    "availableTypes": "all"
+  },
+  {
+    "id": 24,
+    "name": "Gatekeeper",
+    "stats": {
+      "OFF": 84,
+      "DEF": 78,
+      "ABL": 70,
+      "MCH": 67
+    },
+    "rarity": "rare",
+    "availableTypes": "all"
+  },
+  {
+    "id": 25,
+    "name": "Gatekeeper (Rookie)",
+    "stats": {
+      "OFF": 68,
+      "DEF": 53,
+      "ABL": 76,
+      "MCH": 71
     },
     "rarity": "common",
     "availableTypes": "all"
