@@ -45,11 +45,11 @@
       "price": 300,
       "description": "Only available this week!",
       "rarities": {
-        "common": 30,
-        "uncommon": 35,
-        "rare": 20,
-        "legendary": 12,
-        "mythic": 3
+        "common": 0,
+        "uncommon": 0,
+        "rare": 0,
+        "legendary": 100,
+        "mythic": 0
       },
       "allowedCards": [6] 
     }
