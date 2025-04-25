@@ -178,20 +178,66 @@ async function registerCommands(commands) {
       throw new Error(`Guild ${GUILD_ID} not found or bot not in guild`);
     }
 
-    // Check bot permissions
+    // Check bot permissions - more detailed reporting
     const me = await guild.members.fetch(client.user.id);
+    
+    // Required permissions for command registration and operation
     const requiredPermissions = [
-      PermissionsBitField.Flags.ManageGuild,
-      PermissionsBitField.Flags.Administrator
+      'ManageGuild',       // For managing commands (essential)
+      'ViewChannel',       // Needed to see the guild
+      'SendMessages',      // Needed to respond to interactions
+      'EmbedLinks',       // Needed for rich embeds
+      'AttachFiles',      // Needed if your bot sends files
+      'ReadMessageHistory' // Needed for some interaction features
     ];
     
-    const missingPermissions = requiredPermissions.filter(
-      perm => !me.permissions.has(perm)
+    // Recommended but not strictly required
+    const recommendedPermissions = [
+      'Administrator'     // Makes everything easier during development
+    ];
+
+    // Get missing required permissions
+    const missingRequired = requiredPermissions.filter(
+      perm => !me.permissions.has(PermissionsBitField.Flags[perm])
     );
     
-    if (missingPermissions.length > 0) {
-      console.warn('⚠️ Missing recommended permissions:', 
-        missingPermissions.map(p => PermissionsBitField.Flags[p]).join(', '));
+    // Get missing recommended permissions
+    const missingRecommended = recommendedPermissions.filter(
+      perm => !me.permissions.has(PermissionsBitField.Flags[perm])
+    );
+
+    // Detailed permission reporting
+    if (missingRequired.length > 0 || missingRecommended.length > 0) {
+      console.warn('🔐 Permission Report:');
+      
+      if (missingRequired.length > 0) {
+        console.warn('❌ Missing REQUIRED permissions:');
+        console.table(missingRequired.map(perm => ({
+          Permission: perm,
+          Description: getPermissionDescription(perm),
+          Critical: 'YES',
+          Solution: getPermissionSolution(perm)
+        })));
+      }
+
+      if (missingRecommended.length > 0) {
+        console.warn('⚠️ Missing RECOMMENDED permissions:');
+        console.table(missingRecommended.map(perm => ({
+          Permission: perm,
+          Description: getPermissionDescription(perm),
+          Critical: 'No',
+          Solution: getPermissionSolution(perm)
+        })));
+      }
+
+      // Special warning if ManageGuild is missing
+      if (missingRequired.includes('ManageGuild')) {
+        console.error('\n🚨 CRITICAL: Missing "ManageGuild" permission!');
+        console.error('This permission is REQUIRED for command registration.');
+        console.error('Please ensure the bot has this permission in server settings.');
+      }
+    } else {
+      console.log('✅ All required permissions are available');
     }
 
     // Prepare command list
@@ -251,17 +297,48 @@ async function registerCommands(commands) {
     
     // Enhanced error diagnostics
     if (error.code === 50001) {
-      console.error('⚠️ Missing Access - Ensure the bot is in the server');
+      console.error('⚠️ Missing Access - Ensure the bot is in the server and has proper permissions');
     } else if (error.code === 50013) {
-      console.error('⚠️ Missing Permissions - Check bot role position');
+      console.error('⚠️ Missing Permissions - Check bot role position and permissions');
+      console.error('Required permissions: ManageGuild, SendMessages, ViewChannel');
     } else if (error.code === 40041) {
-      console.error('⚠️ Invalid command format - Check command data');
+      console.error('⚠️ Invalid command format - Check command data structures');
     } else if (error.code === 429) {
       console.error('⚠️ Rate Limited - Wait before retrying');
+    } else if (error.message.includes('permissions')) {
+      console.error('⚠️ Permission-related error detected');
+      console.error('Please ensure the bot has these permissions:');
+      console.error('- ManageGuild (essential for command registration)');
+      console.error('- SendMessages');
+      console.error('- ViewChannel');
     }
     
     throw error;
   }
+}
+
+// Helper functions for permission reporting
+function getPermissionDescription(perm) {
+  const descriptions = {
+    ManageGuild: 'Manage server (rename, change region, etc.) - REQUIRED for command management',
+    ViewChannel: 'View text channels and see message history',
+    SendMessages: 'Send messages in text channels',
+    EmbedLinks: 'Include embedded content in messages',
+    AttachFiles: 'Upload files with messages',
+    ReadMessageHistory: 'See previous messages in channels',
+    Administrator: 'Full administrative access (recommended for setup)'
+  };
+  return descriptions[perm] || 'Unknown permission';
+}
+
+function getPermissionSolution(perm) {
+  const solutions = {
+    ManageGuild: '1. Go to Server Settings > Roles\n2. Select bot role\n3. Enable "Manage Server"',
+    Administrator: 'Enable temporarily during setup, then disable',
+    ViewChannel: 'Ensure bot role has "Read Text Channels" permission',
+    SendMessages: 'Required for slash command responses'
+  };
+  return solutions[perm] || 'Check Discord server role permissions';
 }
 
 // Bot startup sequence
