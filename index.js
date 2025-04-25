@@ -287,26 +287,37 @@ async function registerGuildCommands(commands) {
   try {
     const commandData = Array.from(commands.values()).map(cmd => cmd.data.toJSON());
     console.log(`🔄 Registering ${commandData.length} commands...`);
+    console.log('Command data:', JSON.stringify(commandData, null, 2));
 
     // Add retry logic
     let retries = 3;
     while (retries > 0) {
       try {
-        await rest.put(
+        console.log(`Attempting to register commands (attempt ${4-retries}/3)...`);
+        const response = await rest.put(
           Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
           { body: commandData }
         );
         console.log('✅ Commands registered successfully');
+        console.log('Response:', JSON.stringify(response, null, 2));
         return;
       } catch (error) {
         retries--;
+        console.error(`❌ Command registration attempt failed:`, error);
         if (retries === 0) throw error;
-        console.log(`⚠️ Command registration failed, retrying... (${retries} attempts left)`);
-        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
+        console.log(`⚠️ Retrying in 5 seconds... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
     }
   } catch (error) {
     console.error('❌ Command registration failed:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      status: error.status,
+      statusText: error.statusText,
+      data: error.data
+    });
     throw error;
   }
 }
@@ -320,10 +331,12 @@ function setupEventHandlers(commands) {
     await new Promise(resolve => setTimeout(resolve, 5000));
     
     try {
+      console.log('Starting command registration...');
       await registerGuildCommands(commands);
       console.log('🎉 Bot is ready!');
     } catch (error) {
       console.error('⚠️ Command registration failed:', error);
+      console.error('Full error details:', error);
       // Don't exit the process, just log the error
     }
   });
