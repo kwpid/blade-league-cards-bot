@@ -15,12 +15,7 @@ import {
 import { Pool } from 'pg';
 import 'dotenv/config';
 import { calculateCardValue, calculatePackPrice } from './utils/economy.js';
-export const cardsData = loadDataWithCache('data/cards.json');
-export const shopData = {
-  ...loadDataWithCache('data/shopItems.json'),
-  roiPercentage: config.roiPercentage
-};
-export { calculateCardValue, calculatePackPrice };
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Configuration loading
@@ -357,5 +352,10 @@ async function startBot() {
     process.exit(1);
   }
 }
-
+export const cardsData = loadDataWithCache('data/cards.json');
+export const shopData = {
+  ...loadDataWithCache('data/shopItems.json'),
+  roiPercentage: config.roiPercentage
+};
+export { calculateCardValue, calculatePackPrice };
 startBot();
