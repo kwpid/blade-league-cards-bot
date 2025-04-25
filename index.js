@@ -88,7 +88,7 @@ function validateEnvironment() {
     },
     DATABASE_URL: {
       description: 'PostgreSQL connection URL',
-      validate: val => val && val.startsWith('postgres://')
+      validate: val => val && (val.startsWith('postgres://') || val.startsWith('postgresql://'))
     }
   };
 
@@ -139,7 +139,7 @@ const client = new Client({
 
 // Database setup with connection pooling and error handling
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL.replace('postgresql://', 'postgres://'),
   ssl: process.env.NODE_ENV === 'production' ? { 
     rejectUnauthorized: false 
   } : false,
