@@ -358,12 +358,6 @@ async function startBot() {
     process.exit(1);
   }
 });
-        
-        console.log('🎉 Bot is fully initialized!');
-      } catch (error) {
-        console.error('💥 Failed during ready handler:', error);
-      }
-    });
 
     client.on('interactionCreate', async interaction => {
       if (interaction.isCommand()) {
