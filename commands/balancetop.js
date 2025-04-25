@@ -2,7 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 
 export default {
   data: new SlashCommandBuilder()
-    .setName('baltop')
+    .setName('balancetop')
     .setDescription('Displays the top 10 richest players'),
   
   async execute(interaction, pool) {
