@@ -15,7 +15,12 @@ import {
 import { Pool } from 'pg';
 import 'dotenv/config';
 import { calculateCardValue, calculatePackPrice } from './utils/economy.js';
-
+export const cardsData = loadDataWithCache('data/cards.json');
+export const shopData = {
+  ...loadDataWithCache('data/shopItems.json'),
+  roiPercentage: config.roiPercentage
+};
+export { calculateCardValue, calculatePackPrice };
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Configuration loading
@@ -59,13 +64,6 @@ function loadDataWithCache(filePath) {
   }
 }
 
-// Shared data exports
-export const cardsData = loadDataWithCache('data/cards.json');
-export const shopData = {
-  ...loadDataWithCache('data/shopItems.json'),
-  roiPercentage: config.roiPercentage
-};
-export { calculateCardValue, calculatePackPrice };
 
 // Environment validation
 function validateEnvironment() {
