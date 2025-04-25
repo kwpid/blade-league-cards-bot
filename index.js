@@ -142,7 +142,6 @@ async function loadCommands() {
     commands[name] = cmd;
     console.log(`📦 Loaded debug command: ${name}`);
   });
-  });
 
   if (skippedCommands.length > 0) {
     console.warn('⚠️ Skipped commands:');
@@ -204,6 +203,7 @@ async function registerCommands(commands) {
     
     for (let attempt = 1; attempt <= MAX_REGISTER_RETRIES; attempt++) {
       try {
+         
         console.log(`📡 Registering commands (attempt ${attempt}/${MAX_REGISTER_RETRIES})...`);
         registeredCommands = await rest.put(
           Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
@@ -214,25 +214,6 @@ async function registerCommands(commands) {
           console.error(`❌ Registration attempt ${attempt} failed:`, error.message);
         // Clear commands if fail.
         await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] });
-        if (attempt === MAX_REGISTER_RETRIES) throw error;
-        await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
-      }
-    }
-
-    // Register new commands with retries
-    const MAX_REGISTER_RETRIES = 3;
-    let registeredCommands = [];
-    
-    for (let attempt = 1; attempt <= MAX_REGISTER_RETRIES; attempt++) {
-      try {
-        console.log(`📡 Registering commands (attempt ${attempt}/${MAX_REGISTER_RETRIES})...`);
-        registeredCommands = await rest.put(
-          Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-          { body: commandsToRegister }
-        );
-        break;
-      } catch (error) {
-        console.error(`❌ Registration attempt ${attempt} failed:`, error.message);
         if (attempt === MAX_REGISTER_RETRIES) throw error;
         await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
       }
@@ -289,11 +270,15 @@ async function startBot() {
       });
 
       // Register commands
+        try {
         await registerCommands(commands);
         console.log('🎉 Bot is fully operational!');
+        } catch (error) {
+          console.error('⚠️ Command registration failed on startup - some commands may not be available', error)
+        }
       
-      }
-    });
+    }); // end of ready
+
 
     // Interaction handling
     client.on('interactionCreate', async interaction => {
