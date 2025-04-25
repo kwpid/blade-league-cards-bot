@@ -288,12 +288,23 @@ async function registerGuildCommands(commands) {
     const commandData = Array.from(commands.values()).map(cmd => cmd.data.toJSON());
     console.log(`🔄 Registering ${commandData.length} commands...`);
 
-    await rest.put(
-      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-      { body: commandData }
-    );
-
-    console.log('✅ Commands registered successfully');
+    // Add retry logic
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        await rest.put(
+          Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+          { body: commandData }
+        );
+        console.log('✅ Commands registered successfully');
+        return;
+      } catch (error) {
+        retries--;
+        if (retries === 0) throw error;
+        console.log(`⚠️ Command registration failed, retrying... (${retries} attempts left)`);
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds before retry
+      }
+    }
   } catch (error) {
     console.error('❌ Command registration failed:', error);
     throw error;
@@ -304,11 +315,16 @@ async function registerGuildCommands(commands) {
 function setupEventHandlers(commands) {
   client.once('ready', async () => {
     console.log(`🤖 Logged in as ${client.user.tag}`);
+    
+    // Wait a bit to ensure the bot is fully connected
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    
     try {
       await registerGuildCommands(commands);
       console.log('🎉 Bot is ready!');
     } catch (error) {
       console.error('⚠️ Command registration failed:', error);
+      // Don't exit the process, just log the error
     }
   });
 
