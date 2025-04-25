@@ -51,84 +51,122 @@ const shopData = {
   roiPercentage: config.roiPercentage
 };
 
-// Command loader with better error handling
+// Command loader with better error handling and caching
 async function loadCommands() {
   const commands = new Map();
   const commandPath = path.join(__dirname, 'commands');
-  const commandFiles = fs.readdirSync(commandPath).filter(file => file.endsWith('.js'));
+  
+  try {
+    const commandFiles = fs.readdirSync(commandPath).filter(file => file.endsWith('.js'));
+    console.log(`🔍 Found ${commandFiles.length} command files`);
 
-  for (const file of commandFiles) {
-    const filePath = path.join(commandPath, file);
-    try {
-      const { default: command } = await import(filePath);
-      if (!command?.data?.name) {
-        console.warn(`⚠️ Skipping ${file} - missing command data`);
-        continue;
+    for (const file of commandFiles) {
+      const filePath = path.join(commandPath, file);
+      try {
+        const { default: command } = await import(filePath);
+        if (!command?.data?.name) {
+          console.warn(`⚠️ Skipping ${file} - missing command data`);
+          continue;
+        }
+        
+        // Validate required command structure
+        if (typeof command.execute !== 'function') {
+          console.warn(`⚠️ Skipping ${command.data.name} - missing execute function`);
+          continue;
+        }
+
+        commands.set(command.data.name, command);
+        console.log(`📦 Loaded command: ${command.data.name}`);
+      } catch (error) {
+        console.error(`❌ Failed to load command ${file}:`, error);
       }
-      commands.set(command.data.name, command);
-      console.log(`📦 Loaded command: ${command.data.name}`);
-    } catch (error) {
-      console.error(`❌ Failed to load command ${file}:`, error);
     }
+
+    // Add debug commands
+    commands.set('debug-refresh', {
+      data: {
+        name: 'debug-refresh',
+        description: 'Refresh bot commands (Admin only)',
+        toJSON: () => ({ name: 'debug-refresh', description: 'Refresh bot commands (Admin only)' })
+      },
+      execute: handleDebugRefresh
+    });
+
+    commands.set('debug-commands', {
+      data: {
+        name: 'debug-commands',
+        description: 'List registered commands (Admin only)',
+        toJSON: () => ({ name: 'debug-commands', description: 'List registered commands (Admin only)' })
+      },
+      execute: handleDebugListCommands
+    });
+
+    console.log(`✅ Successfully loaded ${commands.size} commands`);
+    return commands;
+  } catch (error) {
+    console.error('❌ Failed to load commands:', error);
+    throw error;
   }
-
-  // Add debug command
-  commands.set('debug-refresh', {
-    data: {
-      name: 'debug-refresh',
-      description: 'Refresh bot commands (Admin only)',
-      toJSON: () => ({ name: 'debug-refresh', description: 'Refresh bot commands (Admin only)' })
-    },
-    execute: handleDebugRefresh
-  });
-
-  console.log(`✅ Loaded ${commands.size} commands`);
-  return commands;
 }
 
-// Modern command registration with proper rate limit handling
+// Improved command registration with better logging and validation
 async function registerGuildCommands(commands) {
   if (!commands.size) {
     throw new Error('No commands to register');
   }
 
-  const commandData = Array.from(commands.values())
-    .map(cmd => cmd.data.toJSON())
-    .filter(Boolean);
-
-  console.log('🔄 Starting command registration...');
-  console.log('📋 Commands to register:', commandData.map(c => c.name));
-
   try {
-    // Clear existing commands first
-    await rest.put(
-      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-      { body: [] }
+    // Convert commands to JSON payload
+    const commandData = Array.from(commands.values())
+      .map(cmd => {
+        try {
+          return cmd.data.toJSON();
+        } catch (error) {
+          console.error(`❌ Failed to serialize command ${cmd.data.name}:`, error);
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    console.log('🔄 Starting command registration process...');
+    console.log('📋 Commands to register:', commandData.map(c => c.name));
+
+    // Get existing commands for comparison
+    const existingCommands = await rest.get(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID)
     );
-    console.log('🗑️ Cleared existing commands');
+    console.log(`🗑️ Found ${existingCommands.length} existing commands to remove`);
 
-    // Register new commands with exponential backoff
-    let attempts = 0;
-    const maxAttempts = 3;
-    let delay = 5000; // Start with 5 second delay
+    // Delete all existing commands first
+    await Promise.all(existingCommands.map(cmd => 
+      rest.delete(Routes.applicationGuildCommand(process.env.CLIENT_ID, process.env.GUILD_ID, cmd.id))
+    ));
+    console.log('✅ Cleared existing commands');
 
-    while (attempts < maxAttempts) {
+    // Register new commands in batches to avoid rate limits
+    const batchSize = 5;
+    const batches = [];
+    for (let i = 0; i < commandData.length; i += batchSize) {
+      batches.push(commandData.slice(i, i + batchSize));
+    }
+
+    let registeredCount = 0;
+    for (const batch of batches) {
       try {
         const data = await rest.put(
           Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
-          { body: commandData }
+          { body: batch }
         );
-        console.log(`✅ Successfully registered ${data.length} commands`);
-        return true;
+        registeredCount += data.length;
+        console.log(`✅ Registered batch of ${batch.length} commands (${registeredCount}/${commandData.length})`);
       } catch (error) {
-        attempts++;
-        if (attempts >= maxAttempts) throw error;
-        
-        console.warn(`⚠️ Attempt ${attempts} failed, retrying in ${delay/1000}s...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        delay *= 2; // Exponential backoff
+        console.error('❌ Failed to register batch:', error);
+        throw error;
       }
     }
+
+    console.log(`🎉 Successfully registered ${registeredCount} commands`);
+    return true;
   } catch (error) {
     console.error('❌ Command registration failed:', error);
     if (error.code === 50001) console.error('⚠️ Missing "applications.commands" scope');
@@ -137,7 +175,7 @@ async function registerGuildCommands(commands) {
   }
 }
 
-// Database initialization with all tables
+// Database initialization remains the same
 async function initDatabase() {
   const dbClient = await pool.connect();
   try {
@@ -225,7 +263,7 @@ async function initDatabase() {
   }
 }
 
-// Debug command handler
+// Debug command handlers
 async function handleDebugRefresh(interaction) {
   if (!interaction.memberPermissions.has('Administrator')) {
     return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
@@ -234,8 +272,9 @@ async function handleDebugRefresh(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
   try {
-    const commands = await loadCommands();
-    await registerGuildCommands(commands);
+    const newCommands = await loadCommands();
+    await registerGuildCommands(newCommands);
+    commands = newCommands; // Update global command cache
     await interaction.editReply('✅ Commands refreshed successfully');
   } catch (error) {
     console.error('Debug refresh failed:', error);
@@ -243,7 +282,32 @@ async function handleDebugRefresh(interaction) {
   }
 }
 
-// Bot startup sequence
+async function handleDebugListCommands(interaction) {
+  if (!interaction.memberPermissions.has('Administrator')) {
+    return interaction.reply({ content: '❌ Admin only command', ephemeral: true });
+  }
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const registeredCommands = await rest.get(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID)
+    );
+
+    const embed = new EmbedBuilder()
+      .setTitle('Registered Commands')
+      .setColor(0x00FF00)
+      .setDescription(registeredCommands.map(c => `• **${c.name}** - ${c.description}`).join('\n') || 'No commands registered')
+      .setFooter({ text: `Total: ${registeredCommands.length} commands` });
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error) {
+    console.error('Debug command list failed:', error);
+    await interaction.editReply(`❌ Failed to list commands: ${error.message}`);
+  }
+}
+
+// Bot startup sequence with improved command handling
 async function startBot() {
   try {
     console.log('🚀 Starting bot initialization...');
@@ -257,7 +321,18 @@ async function startBot() {
       console.log(`🤖 Logged in as ${client.user.tag}`);
       
       try {
-        await registerGuildCommands(commands);
+        // Verify command registration status
+        const registeredCommands = await rest.get(
+          Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID)
+        );
+        
+        if (registeredCommands.length === 0) {
+          console.log('⚠️ No commands registered, performing initial registration...');
+          await registerGuildCommands(commands);
+        } else {
+          console.log(`✅ Found ${registeredCommands.length} registered commands`);
+        }
+        
         console.log('🎉 Bot is ready!');
       } catch (error) {
         console.error('💥 Failed during ready:', error);
@@ -269,7 +344,13 @@ async function startBot() {
       if (!interaction.isChatInputCommand()) return;
 
       const command = commands.get(interaction.commandName);
-      if (!command) return;
+      if (!command) {
+        console.warn(`⚠️ Received unknown command: ${interaction.commandName}`);
+        return interaction.reply({ 
+          content: '❌ Unknown command', 
+          ephemeral: true 
+        });
+      }
 
       // Dev mode check
       if (config.devMode && !interaction.memberPermissions.has('Administrator')) {
@@ -280,6 +361,7 @@ async function startBot() {
       }
 
       try {
+        console.log(`⚡ Executing command: ${interaction.commandName} by ${interaction.user.tag}`);
         await command.execute(interaction, {
           pool,
           cardsData,
