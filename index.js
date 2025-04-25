@@ -12,6 +12,19 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load config.json
 const config = JSON.parse(fs.readFileSync(path.join(__dirname, 'config.json'), 'utf8'));
 
+// Helper function to load JSON files
+function loadJSON(filePath) {
+  return JSON.parse(fs.readFileSync(path.join(__dirname, filePath), 'utf8'));
+}
+
+// Shared data exports for commands
+export const cardsData = loadJSON('data/cards.json');
+export const shopData = {
+  ...loadJSON('data/shopItems.json'),
+  roiPercentage: config.roiPercentage
+};
+export { calculateCardValue, calculatePackPrice };
+
 // Enhanced environment verification
 console.log('🔍 Verifying Discord environment variables...');
 const requiredEnvVars = ['TOKEN', 'CLIENT_ID', 'GUILD_ID', 'DATABASE_URL'];
@@ -306,16 +319,7 @@ async function startBot() {
       }
 
       try {
-        await command.execute(interaction, pool, { 
-          cardsData: loadJSON('data/cards.json'),
-          shopData: {
-            ...loadJSON('data/shopItems.json'),
-            roiPercentage: config.roiPercentage
-          },
-          calculateCardValue,
-          calculatePackPrice,
-          config
-        });
+        await command.execute(interaction, pool, { config });
       } catch (error) {
         console.error(`❌ Error executing ${interaction.commandName}:`, error);
         
