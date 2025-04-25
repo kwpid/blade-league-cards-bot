@@ -191,22 +191,33 @@ async function loadCommands() {
 }
 
 async function registerCommands(commands) {
+  let commandsArray; // Declare at function scope
+  
   try {
     console.log('🔍 Starting guild-specific command registration process...');
     
-    const commandsArray = Object.values(commands)
+    commandsArray = Object.values(commands)
       .filter(cmd => cmd?.data)
-      .map(cmd => cmd.data.toJSON());
+      .map(cmd => {
+        try {
+          return cmd.data.toJSON();
+        } catch (err) {
+          console.error(`❌ Failed to serialize command ${cmd.data.name}:`, err);
+          return null;
+        }
+      })
+      .filter(Boolean);
 
-    console.log(`📋 Commands to register:`, commandsArray.map(c => c.name));
+    console.log('📋 All available commands:', Object.keys(commands));
+    console.log('📋 Commands being registered:', commandsArray.map(c => c.name));
 
     if (commandsArray.length === 0) {
       throw new Error('No valid commands to register');
     }
 
     // More substantial delay
-    console.log('⏳ Adding 5 second delay to avoid rate limits...');
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    console.log('⏳ Adding 10 second delay to avoid rate limits...');
+    await new Promise(resolve => setTimeout(resolve, 10000));
 
     // Clear existing commands with better logging
     console.log('📡 Clearing existing guild-specific commands...');
@@ -221,12 +232,12 @@ async function registerCommands(commands) {
     }
 
     // Add another delay
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Register new commands with timeout
+    // Register new commands with longer timeout
     console.log('📡 Registering new guild-specific commands...');
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
     
     const data = await rest.put(
       Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
@@ -243,12 +254,14 @@ async function registerCommands(commands) {
   } catch (error) {
     console.error('❌ Failed to register guild-specific commands:');
     console.error('Error details:', error);
-    console.error('Request details:', {
-      CLIENT_ID,
-      GUILD_ID,
-      endpoint: Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      commandsCount: commandsArray?.length || 0
-    });
+    
+    if (error.request) {
+      console.error('Request details:', {
+        path: error.request.path,
+        method: error.request.method,
+        body: error.request.body
+      });
+    }
     
     // Check for specific error conditions
     if (error.code === 0) {
@@ -257,11 +270,14 @@ async function registerCommands(commands) {
       console.error('⚠️ Missing access - check bot permissions');
     } else if (error.code === 50013) {
       console.error('⚠️ Missing permissions - check bot role position');
+    } else if (error.name === 'AbortError') {
+      console.error('⚠️ Command registration timed out');
     }
     
     throw error;
   }
 }
+
 async function verifyCommandRegistration(expectedCommands) {
   try {
     console.log('🔍 Verifying command registration...');
@@ -284,6 +300,7 @@ async function verifyCommandRegistration(expectedCommands) {
     return false;
   }
 }
+
 async function verifyDatabaseStructure() {
   const client = await pool.connect();
   try {
@@ -317,86 +334,86 @@ async function startBot() {
     const commands = await loadCommands();
 
     client.once('ready', async () => {
-  console.log(`🤖 Logged in as ${client.user.tag}`);
-  
-  // Wait longer to ensure everything is connected
-  await new Promise(resolve => setTimeout(resolve, 3000));
-  
-  try {
-    await verifyDatabaseStructure();
-    
-    const commands = await loadCommands();
-    await registerCommands(commands);
-    
-    // Verify registration was successful
-    const verification = await verifyCommandRegistration(
-      Object.keys(commands).filter(c => c !== 'test-command')
-    );
-    
-    if (!verification) {
-      console.error('⚠️ Command registration verification failed - attempting retry...');
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      await registerCommands(commands);
-    }
-    
-    client.user.setPresence({
-      activities: [{
-        name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
-        type: ActivityType.Playing
-      }],
-      status: 'online'
+      console.log(`🤖 Logged in as ${client.user.tag}`);
+      
+      // Wait longer to ensure everything is connected
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
+      try {
+        await verifyDatabaseStructure();
+        
+        // Load commands fresh each time
+        const currentCommands = await loadCommands();
+        await registerCommands(currentCommands);
+        
+        // Verify registration was successful
+        const verification = await verifyCommandRegistration(
+          Object.keys(currentCommands).filter(c => c !== 'test-command')
+        );
+        
+        if (!verification) {
+          console.error('⚠️ Command registration verification failed - attempting retry...');
+          await new Promise(resolve => setTimeout(resolve, 10000));
+          await registerCommands(currentCommands);
+        }
+        
+        client.user.setPresence({
+          activities: [{
+            name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
+            type: ActivityType.Playing
+          }],
+          status: 'online'
+        });
+        
+        console.log('🎉 Bot is fully initialized!');
+      } catch (error) {
+        console.error('💥 Failed during ready handler:', error);
+        if (error.message.includes('rate limited')) {
+          console.log('⏳ Rate limited - waiting 1 minute before exit...');
+          await new Promise(resolve => setTimeout(resolve, 60000));
+        }
+        process.exit(1);
+      }
     });
-    
-    console.log('🎉 Bot is fully initialized!');
-  } catch (error) {
-    console.error('💥 Failed during ready handler:', error);
-    // Consider restarting the bot or exiting if critical
-    if (error.message.includes('rate limited')) {
-      console.log('⏳ Rate limited - waiting 1 minute before exit...');
-      await new Promise(resolve => setTimeout(resolve, 60000));
-    }
-    process.exit(1);
-  }
-});
 
     client.on('interactionCreate', async interaction => {
       if (interaction.isCommand()) {
         // Debug commands
         if (interaction.commandName === 'debug-refresh') {
-  if (!interaction.memberPermissions.has('Administrator')) {
-    return interaction.reply({ content: '❌ This command is restricted to server admins.', ephemeral: true });
-  }
+          if (!interaction.memberPermissions.has('Administrator')) {
+            return interaction.reply({ content: '❌ This command is restricted to server admins.', ephemeral: true });
+          }
 
-  try {
-    await interaction.deferReply({ ephemeral: true });
+          try {
+            await interaction.deferReply({ ephemeral: true });
 
-    const commands = await loadCommands();
-    await registerCommands(commands);
-    
-    const verification = await verifyCommandRegistration(
-      Object.keys(commands).filter(c => c !== 'test-command')
-    );
+            const currentCommands = await loadCommands();
+            await registerCommands(currentCommands);
+            
+            const verification = await verifyCommandRegistration(
+              Object.keys(currentCommands).filter(c => c !== 'test-command')
+            );
 
-    await interaction.editReply({
-      content: verification 
-        ? `✅ Successfully refreshed commands!` 
-        : `⚠️ Commands refreshed but verification failed`,
-      embeds: verification ? [] : [new EmbedBuilder()
-        .setColor(0xFFA500)
-        .setDescription('Some commands may not be registered properly. Check logs for details.')
-      ]
-    });
-  } catch (error) {
-    console.error('Debug refresh failed:', error);
-    await interaction.editReply({
-      content: `❌ Failed to refresh: ${error.message}`,
-      embeds: [new EmbedBuilder()
-        .setColor(0xFF0000)
-        .setDescription('Check bot logs for detailed error information')
-      ]
-    });
-  }
-}
+            await interaction.editReply({
+              content: verification 
+                ? `✅ Successfully refreshed commands!` 
+                : `⚠️ Commands refreshed but verification failed`,
+              embeds: verification ? [] : [new EmbedBuilder()
+                .setColor(0xFFA500)
+                .setDescription('Some commands may not be registered properly. Check logs for details.')
+              ]
+            });
+          } catch (error) {
+            console.error('Debug refresh failed:', error);
+            await interaction.editReply({
+              content: `❌ Failed to refresh: ${error.message}`,
+              embeds: [new EmbedBuilder()
+                .setColor(0xFF0000)
+                .setDescription('Check bot logs for detailed error information')
+              ]
+            });
+          }
+        }
 
         // Normal command handling
         const command = commands[interaction.commandName];
