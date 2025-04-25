@@ -317,24 +317,28 @@ function setupEventHandlers(commands) {
     }
   });
 
-  client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
 
-    const command = commands.get(interaction.commandName);
-    if (!command) return;
+  const command = commands.get(interaction.commandName);
+  if (!command) return;
 
-    try {
-      await command.execute(interaction, pool, { config });
-    } catch (error) {
-      console.error(`❌ Error executing ${interaction.commandName}:`, error);
-      const response = { content: '❌ An error occurred', ephemeral: true };
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(response);
-      } else {
-        await interaction.reply(response);
-      }
+  try {
+    await command.execute(interaction, pool, { 
+      config,
+      cardsData,  // Add this
+      shopData   // Add this
+    });
+  } catch (error) {
+    console.error(`❌ Error executing ${interaction.commandName}:`, error);
+    const response = { content: '❌ An error occurred', ephemeral: true };
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply(response);
+    } else {
+      await interaction.reply(response);
     }
-  });
+  }
+});
 
   process.on('unhandledRejection', error => {
     console.error('⚠️ Unhandled rejection:', error);
