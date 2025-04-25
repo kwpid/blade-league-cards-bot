@@ -142,6 +142,7 @@ async function loadCommands() {
     commands[name] = cmd;
     console.log(`📦 Loaded debug command: ${name}`);
   });
+  });
 
   if (skippedCommands.length > 0) {
     console.warn('⚠️ Skipped commands:');
@@ -149,9 +150,17 @@ async function loadCommands() {
       console.warn(`- ${cmd.name}: ${cmd.reason}`);
     });
   }
+  // Here we are checking if any commands were skipped. this could be from a missing property, an invalid data structure, or an error in loading
 
   console.log(`✅ Loaded ${Object.keys(commands).length} commands (${skippedCommands.length} skipped).`);
-  return commands;
+  // Check if any commands are loaded
+    if (Object.keys(commands).length === 0) {
+        console.error('❌ No commands loaded. Exiting...');
+        process.exit(1);
+    }
+
+    return commands;
+
 }
 
 // Enhanced command registration with better error handling
@@ -188,28 +197,27 @@ async function registerCommands(commands) {
 
     console.log('📋 Commands to register:', commandsToRegister.map(c => c.name));
 
-    // Clear existing commands with retries
-    let clearedCount = 0;
-    const MAX_CLEAR_RETRIES = 3;
     
-    for (let attempt = 1; attempt <= MAX_CLEAR_RETRIES; attempt++) {
+    // Register new commands with retries
+    const MAX_REGISTER_RETRIES = 3;
+    let registeredCommands = [];
+    
+    for (let attempt = 1; attempt <= MAX_REGISTER_RETRIES; attempt++) {
       try {
-        console.log(`🗑️ Clearing existing commands (attempt ${attempt}/${MAX_CLEAR_RETRIES})...`);
-        const data = await rest.put(
+        console.log(`📡 Registering commands (attempt ${attempt}/${MAX_REGISTER_RETRIES})...`);
+        registeredCommands = await rest.put(
           Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-          { body: [] }
+          { body: commandsToRegister }
         );
-        clearedCount = data.length;
         break;
       } catch (error) {
-        console.error(`❌ Clear attempt ${attempt} failed:`, error.message);
-        if (attempt === MAX_CLEAR_RETRIES) throw error;
-        await new Promise(resolve => setTimeout(resolve, 5000));
+          console.error(`❌ Registration attempt ${attempt} failed:`, error.message);
+        // Clear commands if fail.
+        await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] });
+        if (attempt === MAX_REGISTER_RETRIES) throw error;
+        await new Promise(resolve => setTimeout(resolve, 5000 * attempt));
       }
     }
-
-    console.log(`✅ Cleared ${clearedCount} existing commands`);
-    await new Promise(resolve => setTimeout(resolve, 2000));
 
     // Register new commands with retries
     const MAX_REGISTER_RETRIES = 3;
@@ -280,13 +288,10 @@ async function startBot() {
         status: 'online'
       });
 
-      // Register commands with delay
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      try {
+      // Register commands
         await registerCommands(commands);
         console.log('🎉 Bot is fully operational!');
-      } catch (error) {
-        console.error('⚠️ Command registration failed - some commands may not be available');
+      
       }
     });
 
