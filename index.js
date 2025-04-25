@@ -154,23 +154,37 @@ async function initDB() {
   }
 }
 
-// Command handling
+// Improved command loading with validation
 async function loadCommands() {
   const commands = {};
+  const skippedCommands = [];
+  
   const commandFiles = fs.readdirSync(path.join(__dirname, 'commands'))
     .filter(file => file.endsWith('.js'));
 
   for (const file of commandFiles) {
     try {
       const { default: command } = await import(`./commands/${file}`);
-      if (command?.data) {
-        commands[command.data.name] = command;
-        console.log(`📦 Loaded command: ${command.data.name}`);
-      } else {
-        console.warn(`⚠️ Command file "${file}" is missing "data" or improperly formatted.`);
+      
+      // Validate command structure
+      if (!command?.data) {
+        skippedCommands.push({ name: file.replace('.js', ''), reason: 'Missing data property' });
+        continue;
       }
+
+      // Verify command can be serialized
+      try {
+        command.data.toJSON();
+      } catch (err) {
+        skippedCommands.push({ name: command.data.name, reason: 'Invalid data structure' });
+        continue;
+      }
+
+      commands[command.data.name] = command;
+      console.log(`📦 Loaded command: ${command.data.name}`);
     } catch (err) {
       console.error(`❌ Error loading command "${file}":`, err);
+      skippedCommands.push({ name: file.replace('.js', ''), reason: 'Load error' });
     }
   }
 
@@ -186,71 +200,87 @@ async function loadCommands() {
   commands['test-command'] = testCommand;
   console.log('📦 Loaded debug command: test-command');
 
-  console.log(`✅ Loaded ${Object.keys(commands).length} commands.`);
+  if (skippedCommands.length > 0) {
+    console.warn('⚠️ Skipped commands:');
+    skippedCommands.forEach(cmd => {
+      console.warn(`- ${cmd.name}: ${cmd.reason}`);
+    });
+  }
+
+  console.log(`✅ Loaded ${Object.keys(commands).length} commands (${skippedCommands.length} skipped).`);
   return commands;
 }
 
+// Enhanced command registration with retries and better logging
 async function registerCommands(commands) {
-  let commandsArray; // Declare at function scope
-  
   try {
     console.log('🔍 Starting guild-specific command registration process...');
     
-    commandsArray = Object.values(commands)
-      .filter(cmd => cmd?.data)
-      .map(cmd => {
-        try {
-          return cmd.data.toJSON();
-        } catch (err) {
-          console.error(`❌ Failed to serialize command ${cmd.data.name}:`, err);
-          return null;
-        }
-      })
-      .filter(Boolean);
+    // Prepare command list with validation
+    const commandsArray = [];
+    const invalidCommands = [];
+    
+    for (const [name, cmd] of Object.entries(commands)) {
+      if (!cmd?.data) {
+        invalidCommands.push(name);
+        continue;
+      }
+      
+      try {
+        commandsArray.push(cmd.data.toJSON());
+      } catch (err) {
+        console.error(`❌ Failed to serialize command ${name}:`, err);
+        invalidCommands.push(name);
+      }
+    }
 
-    console.log('📋 All available commands:', Object.keys(commands));
-    console.log('📋 Commands being registered:', commandsArray.map(c => c.name));
+    console.log('📋 Valid commands to register:', commandsArray.map(c => c.name));
+    if (invalidCommands.length > 0) {
+      console.warn('⚠️ Invalid commands not registered:', invalidCommands);
+    }
 
     if (commandsArray.length === 0) {
       throw new Error('No valid commands to register');
     }
 
-    // More substantial delay
-    console.log('⏳ Adding 10 second delay to avoid rate limits...');
-    await new Promise(resolve => setTimeout(resolve, 10000));
+    // Clear existing commands
+    console.log('🗑️ Clearing existing guild-specific commands...');
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: [] })
+      .then(res => console.log(`✅ Cleared ${res.length} existing commands`))
+      .catch(err => console.error('⚠️ Error clearing commands:', err));
 
-    // Clear existing commands with better logging
-    console.log('📡 Clearing existing guild-specific commands...');
-    try {
-      const deleteResponse = await rest.put(
-        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-        { body: [] }
-      );
-      console.log(`🗑️ Cleared ${deleteResponse.length} existing commands`);
-    } catch (clearError) {
-      console.error('⚠️ Error clearing commands (might be first run):', clearError);
-    }
-
-    // Add another delay
+    // Add delay to avoid rate limits
     await new Promise(resolve => setTimeout(resolve, 5000));
 
-    // Register new commands with longer timeout
-    console.log('📡 Registering new guild-specific commands...');
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    // Register new commands with retries
+    const MAX_RETRIES = 3;
+    let lastError;
     
-    const data = await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { 
-        body: commandsArray,
-        signal: controller.signal
-      }
-    );
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        console.log(`📡 Registering commands (attempt ${attempt}/${MAX_RETRIES})...`);
+        
+        const data = await rest.put(
+          Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+          { body: commandsArray }
+        );
 
-    clearTimeout(timeout);
-    console.log(`✅ Successfully registered ${data.length} guild-specific commands.`);
-    console.log('📋 Registered commands:', data.map(c => c.name));
-    return true;
+        console.log(`✅ Successfully registered ${data.length} guild-specific commands.`);
+        console.log('📋 Registered commands:', data.map(c => c.name));
+        return data;
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ Registration attempt ${attempt} failed:`, error.message);
+        
+        if (attempt < MAX_RETRIES) {
+          const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+          console.log(`⏳ Retrying in ${delay/1000} seconds...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+    }
+
+    throw lastError || new Error('Command registration failed');
   } catch (error) {
     console.error('❌ Failed to register guild-specific commands:');
     console.error('Error details:', error);
@@ -263,21 +293,22 @@ async function registerCommands(commands) {
       });
     }
     
-    // Check for specific error conditions
+    // Specific error handling
     if (error.code === 0) {
       console.error('⚠️ Possible network connectivity issue');
     } else if (error.code === 50001) {
       console.error('⚠️ Missing access - check bot permissions');
     } else if (error.code === 50013) {
       console.error('⚠️ Missing permissions - check bot role position');
-    } else if (error.name === 'AbortError') {
-      console.error('⚠️ Command registration timed out');
+    } else if (error.code === 429) {
+      console.error('⚠️ Rate limited - try again later');
     }
     
     throw error;
   }
 }
 
+// Enhanced verification
 async function verifyCommandRegistration(expectedCommands) {
   try {
     console.log('🔍 Verifying command registration...');
@@ -286,14 +317,24 @@ async function verifyCommandRegistration(expectedCommands) {
     );
     
     const registeredNames = registeredCommands.map(c => c.name);
-    const missingCommands = expectedCommands.filter(c => !registeredNames.includes(c));
+    const expectedSet = new Set(expectedCommands);
     
-    if (missingCommands.length > 0) {
-      console.error('❌ Missing commands:', missingCommands);
+    // Check for missing commands
+    const missing = expectedCommands.filter(c => !registeredNames.includes(c));
+    
+    // Check for unexpected commands
+    const extra = registeredCommands
+      .filter(c => !expectedSet.has(c.name))
+      .map(c => c.name);
+    
+    if (missing.length > 0 || extra.length > 0) {
+      console.error('❌ Command verification issues:');
+      if (missing.length > 0) console.error('- Missing commands:', missing);
+      if (extra.length > 0) console.error('- Extra commands:', extra);
       return false;
     }
     
-    console.log('✅ All commands verified');
+    console.log('✅ All commands verified (exact match)');
     return true;
   } catch (error) {
     console.error('❌ Verification failed:', error);
@@ -326,7 +367,7 @@ async function verifyDatabaseStructure() {
   }
 }
 
-// Bot startup
+// Bot startup with improved command handling
 async function startBot() {
   try {
     console.log('🚀 Starting bot initialization...');
@@ -336,27 +377,30 @@ async function startBot() {
     client.once('ready', async () => {
       console.log(`🤖 Logged in as ${client.user.tag}`);
       
-      // Wait longer to ensure everything is connected
+      // Initial delay to ensure everything is connected
       await new Promise(resolve => setTimeout(resolve, 3000));
       
       try {
         await verifyDatabaseStructure();
         
-        // Load commands fresh each time
-        const currentCommands = await loadCommands();
-        await registerCommands(currentCommands);
+        // Register commands with enhanced verification
+        const registrationSuccess = await registerCommands(commands);
+        if (!registrationSuccess) {
+          throw new Error('Initial command registration failed');
+        }
         
-        // Verify registration was successful
+        // Strict verification
         const verification = await verifyCommandRegistration(
-          Object.keys(currentCommands).filter(c => c !== 'test-command')
+          Object.keys(commands).filter(c => c !== 'test-command')
         );
         
         if (!verification) {
-          console.error('⚠️ Command registration verification failed - attempting retry...');
+          console.error('⚠️ Command registration verification failed - attempting full refresh...');
           await new Promise(resolve => setTimeout(resolve, 10000));
-          await registerCommands(currentCommands);
+          await registerCommands(commands);
         }
         
+        // Set bot presence
         client.user.setPresence({
           activities: [{
             name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
@@ -396,7 +440,7 @@ async function startBot() {
 
             await interaction.editReply({
               content: verification 
-                ? `✅ Successfully refreshed commands!` 
+                ? `✅ Successfully refreshed ${Object.keys(currentCommands).length} commands!` 
                 : `⚠️ Commands refreshed but verification failed`,
               embeds: verification ? [] : [new EmbedBuilder()
                 .setColor(0xFFA500)
