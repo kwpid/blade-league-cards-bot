@@ -16,16 +16,14 @@ import { Pool } from 'pg';
 import 'dotenv/config';
 import { calculateCardValue, calculatePackPrice } from './utils/economy.js';
 
-// Enhanced __dirname setup for ES modules
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Configuration loading with validation
+// Configuration loading
 function loadConfig() {
   try {
     const configPath = path.join(__dirname, 'config.json');
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
     
-    // Config validation
     if (typeof config.devMode !== 'boolean') {
       throw new Error('config.devMode must be a boolean');
     }
@@ -61,7 +59,7 @@ function loadDataWithCache(filePath) {
   }
 }
 
-// Shared data exports for commands
+// Shared data exports
 export const cardsData = loadDataWithCache('data/cards.json');
 export const shopData = {
   ...loadDataWithCache('data/shopItems.json'),
@@ -69,7 +67,7 @@ export const shopData = {
 };
 export { calculateCardValue, calculatePackPrice };
 
-// Environment validation with detailed reporting
+// Environment validation
 function validateEnvironment() {
   console.log('🔍 Verifying environment variables...');
   
@@ -120,7 +118,7 @@ function validateEnvironment() {
 
 validateEnvironment();
 
-// Discord client setup with enhanced configuration
+// Discord client setup
 const client = new Client({ 
   intents: [
     GatewayIntentBits.Guilds,
@@ -137,7 +135,7 @@ const client = new Client({
   }
 });
 
-// Database setup with connection pooling and error handling
+// Database setup with initialization
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL.replace('postgresql://', 'postgres://'),
   ssl: process.env.NODE_ENV === 'production' ? { 
@@ -149,75 +147,114 @@ const pool = new Pool({
   min: 2
 });
 
-// Test database connection
-async function testDatabaseConnection() {
+// Initialize database tables
+async function initializeDatabase() {
   let client;
   try {
     client = await pool.connect();
-    await client.query('SELECT NOW()');
-    console.log('✅ Database connection established');
+    console.log('🔌 Connected to database');
+
+    // Create tables if they don't exist
+    await client.query('BEGIN');
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_balances (
+        user_id VARCHAR(20) PRIMARY KEY,
+        balance INTEGER NOT NULL DEFAULT 100,
+        last_updated TIMESTAMP DEFAULT NOW(),
+        last_daily_claim TIMESTAMP WITH TIME ZONE
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_packs (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(20) NOT NULL,
+        pack_id INTEGER NOT NULL,
+        pack_name VARCHAR(100) NOT NULL,
+        pack_description TEXT,
+        pack_price INTEGER,
+        purchase_date TIMESTAMP DEFAULT NOW(),
+        opened BOOLEAN DEFAULT FALSE,
+        is_limited BOOLEAN DEFAULT FALSE,
+        FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_cards (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(20) NOT NULL,
+        card_id INTEGER NOT NULL,
+        card_name VARCHAR(100) NOT NULL,
+        rarity VARCHAR(20) NOT NULL,
+        variant VARCHAR(20) DEFAULT 'normal',
+        stats_off INTEGER NOT NULL,
+        stats_def INTEGER NOT NULL,
+        stats_abl INTEGER NOT NULL,
+        stats_mch INTEGER NOT NULL,
+        value INTEGER NOT NULL,
+        obtained_date TIMESTAMP DEFAULT NOW(),
+        tags TEXT[] DEFAULT '{}'::TEXT[],
+        FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_titles (
+        user_id VARCHAR(20) NOT NULL,
+        title_name VARCHAR(100) NOT NULL,
+        equipped BOOLEAN DEFAULT FALSE,
+        obtained_date TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (user_id, title_name),
+        FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
+      )
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS user_stats (
+        user_id VARCHAR(20) PRIMARY KEY,
+        wins INTEGER DEFAULT 0,
+        losses INTEGER DEFAULT 0,
+        mmr INTEGER DEFAULT 1000,
+        xp INTEGER DEFAULT 0,
+        level INTEGER DEFAULT 1,
+        FOREIGN KEY (user_id) REFERENCES user_balances(user_id) ON DELETE CASCADE
+      )
+    `);
+
+    await client.query('COMMIT');
+    console.log('✅ Database tables initialized');
+
   } catch (error) {
-    console.error('❌ Database connection failed:', error);
-    process.exit(1);
+    await client?.query('ROLLBACK');
+    console.error('❌ Database initialization failed:', error);
+    throw error;
   } finally {
-    if (client) client.release();
+    client?.release();
   }
 }
 
-// Command loader with enhanced validation
+// Command loader
 async function loadCommands() {
   const commands = new Collection();
   const commandPath = path.join(__dirname, 'commands');
   const commandFiles = fs.readdirSync(commandPath).filter(file => file.endsWith('.js'));
 
-  let loadedCount = 0;
-  let skippedCount = 0;
-
   for (const file of commandFiles) {
-    const filePath = path.join(commandPath, file);
     const commandName = file.replace('.js', '');
-
     try {
-      const { default: command } = await import(`file://${filePath.replace(/\\/g, '/')}`);
+      const { default: command } = await import(`file://${path.join(commandPath, file).replace(/\\/g, '/')}`);
       
-      // Validate command structure
-      if (!command?.data) {
-        console.warn(`⚠️ Skipping ${commandName}: Missing 'data' property`);
-        skippedCount++;
+      if (!command?.data || typeof command.execute !== 'function') {
+        console.warn(`⚠️ Skipping ${commandName}: Invalid command structure`);
         continue;
-      }
-
-      if (typeof command.execute !== 'function') {
-        console.warn(`⚠️ Skipping ${commandName}: Missing 'execute' function`);
-        skippedCount++;
-        continue;
-      }
-
-      // Validate SlashCommandBuilder
-      try {
-        const jsonData = command.data.toJSON();
-        if (!jsonData.name || !jsonData.description) {
-          console.warn(`⚠️ Skipping ${commandName}: Invalid command data structure`);
-          skippedCount++;
-          continue;
-        }
-      } catch (error) {
-        console.warn(`⚠️ Skipping ${commandName}: Failed to serialize command data`, error);
-        skippedCount++;
-        continue;
-      }
-
-      // Check for name consistency
-      if (command.data.name !== commandName) {
-        console.warn(`⚠️ Command name mismatch: ${command.data.name} (file: ${file})`);
       }
 
       commands.set(command.data.name, command);
       console.log(`📦 Loaded command: ${command.data.name}`);
-      loadedCount++;
     } catch (error) {
       console.error(`❌ Failed to load command ${commandName}:`, error);
-      skippedCount++;
     }
   }
 
@@ -233,30 +270,10 @@ async function loadCommands() {
         try {
           const commands = await loadCommands();
           await registerGuildCommands(commands);
-          await interaction.editReply(`✅ Reloaded ${commands.size} commands successfully!`);
+          await interaction.editReply(`✅ Reloaded ${commands.size} commands!`);
         } catch (error) {
           await interaction.editReply(`❌ Failed to reload commands: ${error.message}`);
-          console.error('Command reload failed:', error);
         }
-      }
-    },
-    'bot-status': {
-      data: new SlashCommandBuilder()
-        .setName('bot-status')
-        .setDescription('Check bot status and commands')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-      execute: async (interaction) => {
-        const embed = new EmbedBuilder()
-          .setTitle('🤖 Bot Status')
-          .setColor(0x00AE86)
-          .addFields(
-            { name: 'Commands Loaded', value: commands.size.toString(), inline: true },
-            { name: 'Dev Mode', value: config.devMode ? 'ON' : 'OFF', inline: true },
-            { name: 'Database', value: 'Connected', inline: true }
-          )
-          .setTimestamp();
-
-        await interaction.reply({ embeds: [embed], ephemeral: true });
       }
     }
   };
@@ -264,204 +281,79 @@ async function loadCommands() {
   for (const [name, command] of Object.entries(systemCommands)) {
     commands.set(name, command);
     console.log(`📦 Loaded system command: ${name}`);
-    loadedCount++;
   }
 
-  console.log(`✅ Successfully loaded ${loadedCount} commands (${skippedCount} skipped)`);
+  console.log(`✅ Loaded ${commands.size} commands`);
   return commands;
 }
 
-// Enhanced command registration with guild synchronization
+// Command registration
 async function registerGuildCommands(commands) {
-  const CLIENT_ID = process.env.CLIENT_ID;
-  const GUILD_ID = process.env.GUILD_ID;
   const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
-  console.log('🔄 Starting command registration process...');
-
   try {
-    // Verify guild access
-    const guild = await client.guilds.fetch(GUILD_ID).catch(() => null);
-    if (!guild) {
-      throw new Error(`Bot is not in guild ${GUILD_ID} or guild doesn't exist`);
-    }
-
-    // Check bot permissions in detail
-    const botMember = await guild.members.fetch(client.user.id);
-    const requiredPermissions = new PermissionsBitField([
-      PermissionsBitField.Flags.ViewChannel,
-      PermissionsBitField.Flags.SendMessages,
-      PermissionsBitField.Flags.ManageGuild
-    ]);
-
-    const missingPermissions = botMember.permissions.missing(requiredPermissions);
-    if (missingPermissions.length > 0) {
-      const permissionList = missingPermissions.map(p => `- ${p}`).join('\n');
-      throw new Error(`Missing required permissions:\n${permissionList}`);
-    }
-
-    // Prepare command data
     const commandData = Array.from(commands.values()).map(cmd => cmd.data.toJSON());
-    console.log(`📋 Preparing to register ${commandData.length} commands...`);
+    console.log(`🔄 Registering ${commandData.length} commands...`);
 
-    // Clear existing commands first
-    console.log('🧹 Clearing existing commands...');
     await rest.put(
-      Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-      { body: [] }
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+      { body: commandData }
     );
 
-    // Register new commands with retry logic
-    let registeredCommands = [];
-    const maxRetries = 3;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`🔄 Registering commands (attempt ${attempt}/${maxRetries})...`);
-        registeredCommands = await rest.put(
-          Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-          { body: commandData }
-        );
-        break;
-      } catch (error) {
-        if (attempt === maxRetries) throw error;
-        console.warn(`⚠️ Attempt ${attempt} failed, retrying...`, error.message);
-        await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
-      }
-    }
-
-    console.log(`✅ Successfully registered ${registeredCommands.length} commands`);
-    console.log('📜 Registered commands:', registeredCommands.map(c => c.name));
-
-    // Verify command synchronization
-    const syncedCommands = await guild.commands.fetch();
-    if (syncedCommands.size !== registeredCommands.length) {
-      console.warn(`⚠️ Command count mismatch: API ${registeredCommands.length} vs Guild ${syncedCommands.size}`);
-    }
-
-    return registeredCommands;
+    console.log('✅ Commands registered successfully');
   } catch (error) {
     console.error('❌ Command registration failed:', error);
-    
-    // Enhanced error diagnostics
-    if (error.code === 50001) {
-      console.error('🔒 Missing Access - Ensure the bot is in the server');
-    } else if (error.code === 50013) {
-      console.error('🔒 Missing Permissions - The bot needs "Manage Guild" permission');
-    } else if (error.code === 40041) {
-      console.error('📛 Invalid command format - Check your command definitions');
-    }
-    
     throw error;
   }
 }
 
-// Bot event handlers
+// Event handlers
 function setupEventHandlers(commands) {
-  // Ready event
   client.once('ready', async () => {
-    console.log(`🤖 Logged in as ${client.user.tag} (ID: ${client.user.id})`);
-    console.log(`🌍 Serving ${client.guilds.cache.size} guild(s)`);
-    
-    // Update presence
-    client.user.setPresence({
-      activities: [{
-        name: `${config.devMode ? 'DEV MODE' : 'TCG Cards'} | ROI: ${(config.roiPercentage * 100).toFixed(0)}%`,
-        type: ActivityType.Playing
-      }],
-      status: 'online'
-    });
-
-    // Initial command sync
+    console.log(`🤖 Logged in as ${client.user.tag}`);
     try {
       await registerGuildCommands(commands);
-      console.log('🎉 Bot is ready and commands are synced!');
+      console.log('🎉 Bot is ready!');
     } catch (error) {
-      console.error('⚠️ Initial command sync failed, some commands may not be available');
+      console.error('⚠️ Command registration failed:', error);
     }
   });
 
-  // Interaction handling
   client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const command = commands.get(interaction.commandName);
-    if (!command) {
-      console.warn(`⚠️ Received unknown command: ${interaction.commandName}`);
-      return interaction.reply({
-        content: '❌ This command is not available',
-        ephemeral: true
-      });
-    }
+    if (!command) return;
 
-    // Dev mode check
-    if (config.devMode) {
-      const isAdmin = interaction.memberPermissions.has(PermissionsBitField.Flags.Administrator);
-      if (!isAdmin) {
-        return interaction.reply({
-          content: '🔧 Bot is in maintenance mode. Try again later.',
-          ephemeral: true
-        });
-      }
-    }
-
-    // Execute command with error handling
     try {
-      console.log(`⚡ Executing command: ${interaction.commandName}`);
       await command.execute(interaction, pool, { config });
     } catch (error) {
-      console.error(`❌ Command execution failed: ${interaction.commandName}`, error);
-      
-      const errorResponse = {
-        content: '⚠️ An error occurred while executing this command',
-        ephemeral: true
-      };
-
+      console.error(`❌ Error executing ${interaction.commandName}:`, error);
+      const response = { content: '❌ An error occurred', ephemeral: true };
       if (interaction.deferred || interaction.replied) {
-        await interaction.editReply(errorResponse);
+        await interaction.editReply(response);
       } else {
-        await interaction.reply(errorResponse);
+        await interaction.reply(response);
       }
     }
-  });
-
-  // Error handling
-  client.on('error', error => {
-    console.error('🔌 Discord client error:', error);
   });
 
   process.on('unhandledRejection', error => {
-    console.error('⚠️ Unhandled promise rejection:', error);
-  });
-
-  process.on('uncaughtException', error => {
-    console.error('💥 Uncaught exception:', error);
-    process.exit(1);
+    console.error('⚠️ Unhandled rejection:', error);
   });
 }
 
-// Main bot startup sequence
+// Startup sequence
 async function startBot() {
   try {
-    console.log('🚀 Starting bot initialization...');
-    
-    // Test database connection first
-    await testDatabaseConnection();
-    
-    // Load commands
+    await initializeDatabase();
     const commands = await loadCommands();
-    
-    // Setup event handlers
     setupEventHandlers(commands);
-    
-    // Login to Discord
     await client.login(process.env.TOKEN);
-    
   } catch (error) {
-    console.error('💥 Fatal error during bot startup:', error);
+    console.error('💥 Fatal error during startup:', error);
     process.exit(1);
   }
 }
 
-// Start the bot
 startBot();
